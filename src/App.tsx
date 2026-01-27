@@ -162,7 +162,7 @@ function App() {
     if (!peerId) return;
 
     // @ts-ignore
-    const botName = WebApp.initDataUnsafe.bot_username || 'pukaboy_bot';
+    const botName = 'pukaboy_bot';
     const link = `https://t.me/${botName}/app?startapp=join_${peerId}`;
 
     const url = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("⚔️ Вызываю на дуэль в реальном времени! Жми кнопку!")}`;
