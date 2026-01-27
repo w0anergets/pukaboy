@@ -194,7 +194,10 @@ function App() {
     if (!peerId) return;
     // @ts-ignore
     const botName = 'pukaboy_bot';
-    const link = `https://t.me/${botName}/app?startapp=join_${peerId}`;
+    const appName = 'game'; // Must match the short name in BotFather
+    const link = `https://t.me/${botName}/${appName}?startapp=join_${peerId}`;
+
+    log(`Generated Link: ${link}`);
     WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("🏁 DUEL ME!")}`);
   };
 
