@@ -92,43 +92,67 @@ function App() {
     }
 
     // 2. Initialize PeerJS
-    const peer = new Peer({
-      debug: 2,
-      config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:global.stun.twilio.com:3478' }
-        ]
-      }
-    });
-    peerRef.current = peer;
+    const initPeer = () => {
+      if (peerRef.current) peerRef.current.destroy();
 
-    peer.on('open', (id) => {
-      log(`My PeerID: ${id}`);
-      setPeerId(id);
-      setStatus("Готов");
+      setStatus("Подключение к P2P...");
 
-      // Check for join params
-      // @ts-ignore
-      const startParam = WebApp.initDataUnsafe.start_param;
-      if (startParam && startParam.startsWith('join_')) {
-        const hostId = startParam.replace('join_', '');
-        log(`Joining host: ${hostId}`);
-        joinGame(hostId);
-      }
-    });
+      const peer = new Peer({
+        debug: 2,
+        config: {
+          iceServers: [
+            { urls: 'stun:stun.l.google.com:19302' },
+            { urls: 'stun:global.stun.twilio.com:3478' }
+          ]
+        }
+      });
+      peerRef.current = peer;
 
-    peer.on('connection', (conn) => {
-      log('Incoming connection...');
-      handleConnection(conn);
-    });
+      peer.on('open', (id) => {
+        log(`My PeerID: ${id}`);
+        setPeerId(id);
+        setStatus("Готов");
 
-    peer.on('error', (err) => {
-      log(`Peer Error: ${err.type}`);
-      setStatus(`Err: ${err.type}`);
-    });
+        // Check for join params
+        // @ts-ignore
+        const startParam = WebApp.initDataUnsafe.start_param;
+        if (startParam && startParam.startsWith('join_')) {
+          const hostId = startParam.replace('join_', '');
+          log(`Joining host: ${hostId}`);
+          joinGame(hostId);
+        }
+      });
 
-    return () => peer.destroy();
+      peer.on('connection', (conn) => {
+        log('Incoming connection...');
+        handleConnection(conn);
+      });
+
+      peer.on('disconnected', () => {
+        log('Peer Disconnected. Reconnecting...');
+        setStatus("Reconnecting...");
+        peer.reconnect();
+      });
+
+      peer.on('error', (err) => {
+        log(`Peer Error: ${err.type}`);
+        setStatus(`Err: ${err.type}`);
+
+        if (err.type === 'network' || err.type === 'server-error' || err.type === 'peer-unavailable') {
+          // Retry after delay
+          setTimeout(() => {
+            log("Retrying init...");
+            initPeer();
+          }, 3000);
+        }
+      });
+    };
+
+    initPeer();
+
+    return () => {
+      if (peerRef.current) peerRef.current.destroy();
+    };
   }, []);
 
   // Update the ref logic every render
@@ -330,10 +354,20 @@ function App() {
                 PUKABOY
               </h1>
               <div className="text-xs tracking-[0.5em] text-blue-500 mb-1 z-10">REALTIME PVP</div>
-              <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">v0.2.1 (Shop Update)</div>
+              <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">v0.2.2 (P2P Hotfix)</div>
 
-              {!peerId ? (
-                <div className="animate-pulse text-blue-400 font-mono bg-gray-800 px-4 py-2 rounded-lg">{status}</div>
+              {!peerId || status.startsWith('Err') ? (
+                <div className="flex flex-col items-center gap-2">
+                  <div className="animate-pulse text-blue-400 font-mono bg-gray-800 px-4 py-2 rounded-lg">{status}</div>
+                  {status.startsWith('Err') && (
+                    <button
+                      onClick={() => window.location.reload()}
+                      className="text-xs bg-red-900/50 text-red-200 px-3 py-1 rounded border border-red-500/30"
+                    >
+                      ПЕРЕЗАГРУЗИТЬ
+                    </button>
+                  )}
+                </div>
               ) : (
                 <div className="w-full max-w-xs space-y-4 z-10">
                   <button
