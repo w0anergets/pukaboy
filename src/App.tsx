@@ -45,7 +45,7 @@ function App() {
   // Game Session State
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
-  const [opponentName, setOpponentName] = useState<string | null>(null);
+  const [opponentName] = useState<string | null>(null);
 
   // Local Game State (for smooth UI)
   const [game, setGame] = useState<GameState>({
