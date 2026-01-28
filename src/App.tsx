@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import WebApp from '@twa-dev/sdk'
 import Peer, { DataConnection } from 'peerjs'
 import './App.css'
-import { userService, UserProfile } from './services/userService';
+import { userService } from './services/userService';
+import type { UserProfile } from './services/userService';
 
 // --- Types ---
 type AppMode = 'MENU' | 'LOBBY' | 'RACING' | 'FINISHED';
