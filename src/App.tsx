@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import WebApp from '@twa-dev/sdk'
 import Peer, { DataConnection } from 'peerjs'
 import './App.css'
+import { userService, UserProfile } from './services/userService';
 
 // --- Types ---
 type AppMode = 'MENU' | 'LOBBY' | 'RACING' | 'FINISHED';
@@ -40,6 +41,7 @@ function App() {
 
   // User Data
   const [myProfile, setMyProfile] = useState<{ name: string } | null>(null);
+  const [dbUser, setDbUser] = useState<UserProfile | null>(null);
   const [opponentProfile, setOpponentProfile] = useState<{ name: string } | null>(null);
 
   // P2P State
@@ -71,6 +73,20 @@ function App() {
     const me = { name: user?.first_name || `Player-${Math.floor(Math.random() * 1000)}` };
     setMyProfile(me);
     log(`User: ${me.name}`);
+
+    // Fetch from Supabase
+    if (user) {
+      userService.getOrCreateUser(user).then(userData => {
+        if (userData) {
+          setDbUser(userData);
+          log(`DB: ${userData.puka_coins} coins`);
+        } else {
+          log("DB Error: Fetch Failed");
+        }
+      });
+    } else {
+      log("No TG User, skipping DB");
+    }
 
     // 2. Initialize PeerJS
     const peer = new Peer({
@@ -185,6 +201,16 @@ function App() {
     }
   };
 
+  const claimDailyBonus = async () => {
+    if (!dbUser) return;
+    const newBal = await userService.updateBalance(dbUser.id, 50);
+    if (newBal !== null) {
+      setDbUser({ ...dbUser, puka_coins: newBal });
+      WebApp.HapticFeedback.notificationOccurred('success');
+      log("Bonus Claimed! +50");
+    }
+  };
+
   // --- Actions ---
 
   const createGame = () => {
@@ -274,10 +300,15 @@ function App() {
         if (mode === 'MENU') {
           return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 relative overflow-hidden">
+              <div className="absolute top-4 right-4 flex items-center gap-2 bg-gray-800/80 rounded-full px-4 py-2 border border-yellow-500/30">
+                <span className="text-xl">🍌</span>
+                <span className="font-mono font-bold text-yellow-400">{dbUser?.puka_coins ?? '...'}</span>
+              </div>
+
               <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-500 mb-2 transform -skew-x-6 z-10">
                 PUKABOY
               </h1>
-              <div className="text-xs tracking-[0.5em] text-blue-500 mb-12 z-10">REALTIME PVP</div>
+              <div className="text-xs tracking-[0.5em] text-blue-500 mb-8 z-10">REALTIME PVP</div>
 
               {!peerId ? (
                 <div className="animate-pulse text-blue-400 font-mono bg-gray-800 px-4 py-2 rounded-lg">{status}</div>
@@ -289,6 +320,14 @@ function App() {
                   >
                     <span>⚔️</span> СОЗДАТЬ ДУЭЛЬ
                   </button>
+
+                  <button
+                    onClick={claimDailyBonus}
+                    className="w-full bg-gray-800 hover:bg-gray-700 text-yellow-400 font-bold py-3 rounded-xl border border-yellow-500/20 active:scale-95 flex items-center justify-center gap-2"
+                  >
+                    <span>🎁</span> ПОЛУЧИТЬ БОНУС (+50)
+                  </button>
+
                   <div className="text-[10px] text-gray-600 text-center font-mono mt-4">ID: {peerId}</div>
                 </div>
               )}
