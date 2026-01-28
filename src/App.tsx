@@ -5,8 +5,10 @@ import './App.css'
 import { userService } from './services/userService';
 import type { UserProfile } from './services/userService';
 
+import { ShopView } from './components/ShopView';
+
 // --- Types ---
-type AppMode = 'MENU' | 'LOBBY' | 'RACING' | 'FINISHED';
+type AppMode = 'MENU' | 'LOBBY' | 'RACING' | 'FINISHED' | 'SHOP';
 
 interface GameState {
   myClicks: number;
@@ -238,6 +240,23 @@ function App() {
     startTimeRef.current = Date.now();
   };
 
+  const handleBuy = async (item: any) => {
+    // TODO: Implement Real Payments here
+    // WebApp.openInvoice(...)
+    log(`Buying ${item.name}...`);
+
+    if (!dbUser) return;
+
+    // MOCK PURCHASE
+    const newBal = await userService.updateBalance(dbUser.id, item.coins);
+    if (newBal !== null) {
+      setDbUser({ ...dbUser, puka_coins: newBal });
+      WebApp.HapticFeedback.notificationOccurred('success');
+      log(`Purchased! New Balance: ${newBal}`);
+      setMode('MENU');
+    }
+  };
+
   // Timer Effect
   useEffect(() => {
     let animId: number;
@@ -290,6 +309,15 @@ function App() {
       </div>
 
       {(function () {
+        if (mode === 'SHOP') {
+          return (
+            <ShopView
+              onBack={() => setMode('MENU')}
+              onBuy={handleBuy}
+            />
+          );
+        }
+
         if (mode === 'MENU') {
           return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 relative overflow-hidden">
