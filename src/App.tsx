@@ -19,8 +19,8 @@ interface GameState {
 }
 
 // --- Constants ---
-const WIN_SCORE = 500;
-const VERSION = "v0.3.2 (UX Polish)";
+const WIN_SCORE = 100;
+const VERSION = "v0.3.3 (Width Fix & 100 Taps)";
 
 // Debug Logger Helper
 const useLogger = () => {
