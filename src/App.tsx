@@ -329,7 +329,8 @@ function App() {
               <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-500 mb-2 transform -skew-x-6 z-10">
                 PUKABOY
               </h1>
-              <div className="text-xs tracking-[0.5em] text-blue-500 mb-8 z-10">REALTIME PVP</div>
+              <div className="text-xs tracking-[0.5em] text-blue-500 mb-1 z-10">REALTIME PVP</div>
+              <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">v0.2.1 (Shop Update)</div>
 
               {!peerId ? (
                 <div className="animate-pulse text-blue-400 font-mono bg-gray-800 px-4 py-2 rounded-lg">{status}</div>
