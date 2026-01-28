@@ -9,6 +9,7 @@ export interface GameSession {
     guest_score: number;
     start_time: string | null;
     winner_id: number | null;
+    created_at: string;
 }
 
 export const gameService = {
