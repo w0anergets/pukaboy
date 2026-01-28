@@ -213,7 +213,8 @@ function App() {
         host_score: 0,
         guest_score: 0,
         start_time: null,
-        winner_id: null
+        winner_id: null,
+        created_at: new Date().toISOString()
       });
 
       // Generate Link
