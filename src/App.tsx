@@ -1,8 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
 import WebApp from '@twa-dev/sdk'
 import './App.css'
-import { userService, UserProfile } from './services/userService';
-import { gameService, GameSession } from './services/gameService';
+import { userService } from './services/userService';
+import type { UserProfile } from './services/userService';
+import { gameService } from './services/gameService';
+import type { GameSession } from './services/gameService';
 import { supabase } from './lib/supabase';
 import { ShopView } from './components/ShopView';
 
@@ -43,7 +45,7 @@ function App() {
   // Game Session State
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
-  const [opponentName, setOpponentName] = useState<string | null>(null); // We might need to fetch this separate
+  const [opponentName] = useState<string | null>(null);
 
   // Local Game State (for smooth UI)
   const [game, setGame] = useState<GameState>({
