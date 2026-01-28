@@ -202,15 +202,7 @@ function App() {
     }
   };
 
-  const claimDailyBonus = async () => {
-    if (!dbUser) return;
-    const newBal = await userService.updateBalance(dbUser.id, 50);
-    if (newBal !== null) {
-      setDbUser({ ...dbUser, puka_coins: newBal });
-      WebApp.HapticFeedback.notificationOccurred('success');
-      log("Bonus Claimed! +50");
-    }
-  };
+
 
   // --- Actions ---
 
@@ -322,12 +314,6 @@ function App() {
                     <span>⚔️</span> СОЗДАТЬ ДУЭЛЬ
                   </button>
 
-                  <button
-                    onClick={claimDailyBonus}
-                    className="w-full bg-gray-800 hover:bg-gray-700 text-yellow-400 font-bold py-3 rounded-xl border border-yellow-500/20 active:scale-95 flex items-center justify-center gap-2"
-                  >
-                    <span>🎁</span> ПОЛУЧИТЬ БОНУС (+50)
-                  </button>
 
                   <div className="text-[10px] text-gray-600 text-center font-mono mt-4">ID: {peerId}</div>
                 </div>

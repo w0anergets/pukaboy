@@ -13,13 +13,14 @@ export const userService = {
      * Get user profile or create if not exists
      */
     async getOrCreateUser(telegramUser: { id: number; username?: string; first_name: string; last_name?: string }): Promise<UserProfile | null> {
+        // Try to get existing first
         const { data: existingUser, error: fetchError } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', telegramUser.id)
-            .single();
+            .maybeSingle();
 
-        if (fetchError && fetchError.code !== 'PGRST116') { // PGRST116 is "Row not found"
+        if (fetchError) {
             console.error('Error fetching user:', fetchError);
             return null;
         }
@@ -33,7 +34,7 @@ export const userService = {
             id: telegramUser.id,
             username: telegramUser.username || null,
             full_name: `${telegramUser.first_name} ${telegramUser.last_name || ''}`.trim(),
-            puka_coins: 100, // Welcome bonus
+            puka_coins: 0, // No freebie for V2
             is_premium: false
         };
 
@@ -44,6 +45,11 @@ export const userService = {
             .single();
 
         if (insertError) {
+            // If insert failed (maybe created in parallel), try fetch again
+            if (insertError.code === '23505') { // Unique violation
+                // Recursive call to get the user that now exists
+                return this.getOrCreateUser(telegramUser);
+            }
             console.error('Error creating user:', insertError);
             return null;
         }
