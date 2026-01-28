@@ -20,7 +20,7 @@ interface GameState {
 
 // --- Constants ---
 const WIN_SCORE = 500;
-const VERSION = "v0.3.1 (Sync Fixes)";
+const VERSION = "v0.3.2 (UX Polish)";
 
 // Debug Logger Helper
 const useLogger = () => {
@@ -77,8 +77,27 @@ function App() {
           const startParam = WebApp.initDataUnsafe.start_param;
           if (startParam && startParam.startsWith('join_')) {
             const hostSessionId = startParam.replace('join_', '');
-            log(`Joining session: ${hostSessionId}`);
-            joinSession(hostSessionId, userData.id);
+            log(`Checking session: ${hostSessionId}`);
+
+            // Check if game is already finished
+            gameService.getGame(hostSessionId).then(game => {
+              if (game && game.status === 'FINISHED') {
+                log("Game already finished. Showing results.");
+                setSessionData(game);
+
+                const now = Date.now();
+                const startTime = new Date(game.start_time!).getTime();
+                if (game.winner_id === userData.id) {
+                  setGame({ myClicks: WIN_SCORE, opponentClicks: 0, myTime: now - startTime, opponentTime: null });
+                } else {
+                  setGame({ myClicks: 0, opponentClicks: WIN_SCORE, myTime: null, opponentTime: now - startTime });
+                }
+                setMode('FINISHED');
+              } else {
+                log("Joining session...");
+                joinSession(hostSessionId, userData.id);
+              }
+            });
           }
         } else {
           setStatus("Ошибка входа (DB)");
@@ -148,8 +167,12 @@ function App() {
     if (newSession.status === 'RACING' && mode !== 'RACING') {
       log("RACING STARTED!");
       setMode('RACING');
-      startTimeRef.current = new Date(newSession.start_time!).getTime();
-      WebApp.HapticFeedback.notificationOccurred('success');
+      const startT = new Date(newSession.start_time!).getTime();
+      startTimeRef.current = startT;
+      // Vibrate only when actual start happens (handled in timer loop or just simple timeout)
+      setTimeout(() => {
+        WebApp.HapticFeedback.notificationOccurred('success');
+      }, Math.max(0, startT - Date.now()));
     }
 
     // Only transition to FINISHED when server confirms it
@@ -266,7 +289,12 @@ function App() {
       if (mode === 'RACING') {
         const now = Date.now();
         const start = startTimeRef.current || now;
-        setTimer(((now - start) / 1000).toFixed(2));
+
+        if (now < start) {
+          setTimer(((start - now) / 1000).toFixed(1)); // Countdown
+        } else {
+          setTimer(((now - start) / 1000).toFixed(2)); // Race time
+        }
         animId = requestAnimationFrame(loop);
       }
     };
@@ -283,6 +311,8 @@ function App() {
   const getProgress = (c: number) => Math.min((c / WIN_SCORE) * 100, 100);
 
   const amIHost = sessionData?.host_id === dbUser?.id;
+  const timeToStart = (startTimeRef.current || 0) - Date.now();
+  const isCountingDown = mode === 'RACING' && timeToStart > 0;
 
   return (
     <>
@@ -365,14 +395,27 @@ function App() {
               )}
 
               {!sessionData?.guest_id && (
-                <div className="text-center text-gray-500 text-xs">Пригласи друга через кнопку "Share" в меню...</div>
+                <div className="text-center text-gray-500 text-xs">
+                  {(() => {
+                    const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
+                    const diff = Date.now() - createdAt;
+                    if (diff > 5 * 60 * 1000) { // 5 minutes
+                      return <span className="text-red-500">Лобби устарело. Создайте новую игру.</span>;
+                    }
+                    return 'Пригласи друга через кнопку "Share" в меню...';
+                  })()}
+                </div>
               )}
 
               <button
                 onClick={() => { setMode('MENU'); setSessionId(null); }}
                 className="mt-8 text-gray-500 underline text-xs"
               >
-                Отмена
+                {(() => {
+                  const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
+                  const diff = Date.now() - createdAt;
+                  return diff > 5 * 60 * 1000 ? 'В меню' : 'Отмена';
+                })()}
               </button>
             </div>
           );
@@ -382,9 +425,10 @@ function App() {
           <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-manipulation select-none">
             {/* ... REUSE EXISTING GAME RENDER, BUT WITH NEW STATE ... */}
             <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${mode === 'FINISHED' ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
-              <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'}`}>
-                {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : timer}
+              <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'} ${isCountingDown ? 'text-red-500 scale-150 animate-pulse' : ''}`}>
+                {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : (isCountingDown ? Math.ceil(timeToStart / 1000) : timer)}
               </span>
+              {isCountingDown && <span className="text-xs font-bold text-red-500 tracking-widest uppercase">Get Ready</span>}
             </div>
 
             <div className="flex-1 flex relative">
@@ -399,6 +443,15 @@ function App() {
                 <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-linear pb-4" style={{ bottom: `${getProgress(game.opponentClicks)}%` }}>😈</div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-red-500 text-xs tracking-wider bg-red-900/20 px-2 rounded">OPP</div>
               </div>
+
+              {/* COUNTDOWN OVERLAY */}
+              {isCountingDown && (
+                <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+                  <div className="text-9xl font-black text-white animate-ping">
+                    {Math.ceil(timeToStart / 1000)}
+                  </div>
+                </div>
+              )}
 
               {mode === 'FINISHED' && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center animate-in fade-in duration-300">
@@ -417,12 +470,12 @@ function App() {
               <div className="absolute top-3 w-16 h-1 bg-gray-600/30 rounded-full"></div>
               <button
                 onPointerDown={handleTap}
-                disabled={mode !== 'RACING'}
+                disabled={mode !== 'RACING' || isCountingDown}
                 className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4
-                    ${mode !== 'RACING' ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] active:shadow-none active:translate-y-[10px] active:scale-95'}
+                    ${(mode !== 'RACING' || isCountingDown) ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] active:shadow-none active:translate-y-[10px] active:scale-95'}
                  `}
               >
-                <span className="text-4xl font-black text-white drop-shadow-md select-none">TAP!</span>
+                <span className="text-4xl font-black text-white drop-shadow-md select-none">{isCountingDown ? 'WAIT' : 'TAP!'}</span>
                 <span className="text-xs font-mono text-blue-200 mt-1">{game.myClicks}/{WIN_SCORE}</span>
               </button>
             </div>

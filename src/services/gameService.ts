@@ -75,7 +75,7 @@ export const gameService = {
             .from('game_sessions')
             .update({
                 status: 'RACING',
-                start_time: new Date().toISOString()
+                start_time: new Date(Date.now() + 3000).toISOString() // 3s countdown
             })
             .eq('id', gameId);
     },
