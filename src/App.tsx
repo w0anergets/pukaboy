@@ -19,8 +19,8 @@ interface GameState {
 }
 
 // --- Constants ---
-const WIN_SCORE = 50;
-const VERSION = "v0.3.0 (Realtime DB)";
+const WIN_SCORE = 500;
+const VERSION = "v0.3.1 (Sync Fixes)";
 
 // Debug Logger Helper
 const useLogger = () => {
@@ -45,7 +45,7 @@ function App() {
   // Game Session State
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
-  const [opponentName] = useState<string | null>(null);
+  const [opponentName, setOpponentName] = useState<string | null>(null);
 
   // Local Game State (for smooth UI)
   const [game, setGame] = useState<GameState>({
@@ -132,10 +132,16 @@ function App() {
     const amIHost = newSession.host_id === dbUser.id;
 
     // Update Scores
+    // CRITICAL FIX: Only update opponent score from server to avoid local rollback jitter.
+    // We trust our own local clicks for UI, but send them to server for verification.
+    const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
+    const serverOppScore = amIHost ? newSession.guest_score : newSession.host_score;
+
     setGame(prev => ({
       ...prev,
-      myClicks: amIHost ? newSession.host_score : newSession.guest_score,
-      opponentClicks: amIHost ? newSession.guest_score : newSession.host_score
+      // If server somehow sees more clicks than me (e.g. cross-device?), take server. Otherwise keep local.
+      myClicks: Math.max(prev.myClicks, serverMyScore),
+      opponentClicks: serverOppScore
     }));
 
     // State Transitions
@@ -146,20 +152,18 @@ function App() {
       WebApp.HapticFeedback.notificationOccurred('success');
     }
 
+    // Only transition to FINISHED when server confirms it
     if (newSession.status === 'FINISHED' && mode !== 'FINISHED') {
-      log("GAME FINISHED!");
-      // Determine winner logic if needed, or just show end screen
+      log("GAME FINISHED (Server Confirmed)!");
       const now = Date.now();
-      // Use server time ideally, but local diff works for MVP display
       const startTime = new Date(newSession.start_time!).getTime();
 
-      // Mock finish times based on who won (DB winner_id)
-      // In real app, we would store finish_times in DB for each player
       if (newSession.winner_id === dbUser.id) {
         setGame(prev => ({ ...prev, myTime: now - startTime, opponentTime: null }));
       } else {
         setGame(prev => ({ ...prev, myTime: null, opponentTime: now - startTime }));
       }
+      setMode('FINISHED');
     }
 
     // Update Lobby Status
@@ -225,16 +229,20 @@ function App() {
     if (mode !== 'RACING' || !sessionId || !dbUser) return;
 
     // Optimistic UI update
-    setGame(prev => ({ ...prev, myClicks: prev.myClicks + 1 }));
+    const newClicks = game.myClicks + 1;
+    setGame(prev => ({ ...prev, myClicks: newClicks }));
 
-    WebApp.HapticFeedback.impactOccurred('light');
+    // Stronger Feedback
+    WebApp.HapticFeedback.impactOccurred('medium');
 
     // Send to DB
     await gameService.click(sessionId, dbUser.id);
 
-    // Local Check for finish (Server will authorize efficiently later)
-    if (game.myClicks + 1 >= WIN_SCORE) {
-      log("Winner!");
+    // Check for finish
+    // We just SEND the finish signal, but we don't change local mode until handleSessionUpdate sees it.
+    // This prevents "I won locally but server didn't register it yet" desync.
+    if (newClicks >= WIN_SCORE) {
+      log("Reached Goal! Sending finish...");
       await gameService.finishGame(sessionId, dbUser.id);
     }
   };
@@ -302,7 +310,7 @@ function App() {
               <div className="text-xs tracking-[0.5em] text-blue-500 mb-1 z-10">REALTIME PVP</div>
               <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">{VERSION}</div>
 
-              <div className="w-full max-w-xs space-y-4 z-10">
+              <div className="w-full space-y-4 z-10">
                 <button
                   onClick={createGame}
                   disabled={!dbUser}
@@ -346,7 +354,7 @@ function App() {
               {sessionData?.guest_id && amIHost && (
                 <button
                   onClick={doStart}
-                  className="w-full max-w-xs bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black text-xl py-5 rounded-2xl shadow-[0_5px_0_rgb(21,128,61)] active:shadow-none active:translate-y-[5px] transition-all animate-pulse"
+                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black text-xl py-5 rounded-2xl shadow-[0_5px_0_rgb(21,128,61)] active:shadow-none active:translate-y-[5px] transition-all animate-pulse"
                 >
                   ПОГНАЛИ! 🚀
                 </button>
@@ -373,9 +381,9 @@ function App() {
         return (
           <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-manipulation select-none">
             {/* ... REUSE EXISTING GAME RENDER, BUT WITH NEW STATE ... */}
-            <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${game.myTime ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
-              <span className={`font-mono text-4xl font-bold tracking-tighter ${game.myTime ? 'text-gray-500' : 'text-yellow-400'}`}>
-                {game.myTime ? ((game.myTime / 1000).toFixed(2)) : timer}
+            <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${mode === 'FINISHED' ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
+              <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'}`}>
+                {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : timer}
               </span>
             </div>
 
@@ -392,7 +400,7 @@ function App() {
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-red-500 text-xs tracking-wider bg-red-900/20 px-2 rounded">OPP</div>
               </div>
 
-              {game.myTime && (
+              {mode === 'FINISHED' && (
                 <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center animate-in fade-in duration-300">
                   <div className="text-8xl mb-4 animate-bounce">
                     {sessionData?.winner_id === dbUser?.id ? '🏆' : '🐢'}
@@ -409,9 +417,9 @@ function App() {
               <div className="absolute top-3 w-16 h-1 bg-gray-600/30 rounded-full"></div>
               <button
                 onPointerDown={handleTap}
-                disabled={!!game.myTime}
+                disabled={mode !== 'RACING'}
                 className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4
-                    ${game.myTime ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] active:shadow-none active:translate-y-[10px] active:scale-95'}
+                    ${mode !== 'RACING' ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] active:shadow-none active:translate-y-[10px] active:scale-95'}
                  `}
               >
                 <span className="text-4xl font-black text-white drop-shadow-md select-none">TAP!</span>
