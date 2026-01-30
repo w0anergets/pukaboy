@@ -1,5 +1,5 @@
 import React from 'react';
-import { UserProfile } from '../services/userService';
+import type { UserProfile } from '../services/userService';
 
 interface MenuScreenProps {
     user: UserProfile | null;
