@@ -6,10 +6,10 @@ import type { UserProfile } from './services/userService';
 import { MenuScreen } from './screens/MenuScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 import { GameScreen } from './screens/GameScreen';
+import { ResultScreen } from './screens/ResultScreen';
 import { gameService, GameSession } from './services/gameService';
 
 function App() {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [mode, setMode] = useState<'MENU' | 'LOBBY' | 'RACING' | 'FINISHED'>('MENU');
   const [user, setUser] = useState<UserProfile | null>(null);
   const [status, setStatus] = useState("Initializing...");
@@ -92,6 +92,24 @@ function App() {
     setMode('FINISHED');
   };
 
+  const handleRematch = (newSessId: string) => {
+    setCurrentSessionId(newSessId);
+    setSessionData(null);
+    setMode('LOBBY');
+    // Guest will typically auto-join or need to click join again?
+    // In createRematch, host creates it.
+    // If I am guest, passing newSessId means I want to go to that lobby.
+    if (user && newSessId) {
+      gameService.joinGame(newSessId, user.id);
+    }
+  };
+
+  const handleBackToMenu = () => {
+    setCurrentSessionId(null);
+    setSessionData(null);
+    setMode('MENU');
+  };
+
   return (
     <div className="min-h-screen bg-gray-900 text-white font-sans overflow-hidden select-none">
       {mode === 'MENU' && (
@@ -107,10 +125,7 @@ function App() {
           sessionId={currentSessionId}
           user={user}
           onStart={handleRaceStart}
-          onBack={() => {
-            setMode('MENU');
-            setCurrentSessionId(null);
-          }}
+          onBack={handleBackToMenu}
         />
       )}
 
@@ -123,14 +138,16 @@ function App() {
         />
       )}
 
-      {mode === 'FINISHED' && (
-        <div className="h-screen flex items-center justify-center">
-          FINISHED! (Results in next update)
-        </div>
+      {mode === 'FINISHED' && user && sessionData && (
+        <ResultScreen
+          session={sessionData}
+          user={user}
+          onRematch={handleRematch}
+          onMenu={handleBackToMenu}
+        />
       )}
     </div>
   );
 }
 
 export default App;
-```
