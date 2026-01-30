@@ -46,71 +46,82 @@ function App() {
   // Game Session State
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
-  const [opponentName] = useState<string | null>(null);
+  // const [opponentName] = useState<string | null>(null);
+
+  // ...
+
+  {/* CLICK AREA */ }
+  <div
+    className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative active:bg-gray-700 transition-colors"
+    onPointerDown={() => {
+      handleTap();
+      // Optional: Visual feedback on the whole container
+    }}
+  >
 
   // Local Game State (for smooth UI)
-  const [game, setGame] = useState<GameState>({
-    myClicks: 0,
-    opponentClicks: 0,
-    myTime: null,
-    opponentTime: null
+    const [game, setGame] = useState<GameState>({
+      myClicks: 0,
+      opponentClicks: 0,
+      myTime: null,
+      opponentTime: null
   });
 
-  const startTimeRef = useRef<number>(0);
-  const [timer, setTimer] = useState("0.00");
-  const subscriptionRef = useRef<any>(null);
+      const startTimeRef = useRef<number>(0);
+        const [timer, setTimer] = useState("0.00");
+        const subscriptionRef = useRef<any>(null);
 
-  // Computed state for hooks
-  const timeToStart = (startTimeRef.current || 0) - Date.now();
+          // Computed state for hooks
+          const timeToStart = (startTimeRef.current || 0) - Date.now();
   const isCountingDown = mode === 'RACING' && timeToStart > 0;
 
   // 1. Initialize & Auth
   useEffect(() => {
-    WebApp.expand();
-    WebApp.enableClosingConfirmation(); // Prevent accidental swipes closing app
-    // @ts-ignore
-    const user = WebApp.initDataUnsafe.user;
-
-    if (user) {
-      userService.getOrCreateUser(user).then(userData => {
-        if (userData) {
-          setDbUser(userData);
-          log(`Logged in as ${userData.full_name}`);
-          setStatus("Готов");
-
-          // Check if opened via link
+            WebApp.expand();
+          WebApp.enableClosingConfirmation(); // Prevent accidental swipes closing app
           // @ts-ignore
-          const startParam = WebApp.initDataUnsafe.start_param;
-          if (startParam && startParam.startsWith('join_')) {
-            const hostSessionId = startParam.replace('join_', '');
-            log(`Checking session: ${hostSessionId}`);
+          const user = WebApp.initDataUnsafe.user;
 
-            // Check if game is already finished
-            gameService.getGame(hostSessionId).then(game => {
-              if (game && game.status === 'FINISHED') {
-                log("Game already finished. Showing results.");
-                setSessionData(game);
+          if (user) {
+            userService.getOrCreateUser(user).then(userData => {
+              if (userData) {
+                setDbUser(userData);
+                log(`Logged in as ${userData.full_name}`);
+                setStatus("Готов");
 
-                const now = Date.now();
-                const startTime = new Date(game.start_time!).getTime();
-                if (game.winner_id === userData.id) {
-                  setGame({ myClicks: WIN_SCORE, opponentClicks: 0, myTime: now - startTime, opponentTime: null });
-                } else {
-                  setGame({ myClicks: 0, opponentClicks: WIN_SCORE, myTime: null, opponentTime: now - startTime });
+                // Check if opened via link
+                // @ts-ignore
+                const startParam = WebApp.initDataUnsafe.start_param;
+                if (startParam && startParam.startsWith('join_')) {
+                  const hostSessionId = startParam.replace('join_', '');
+                  log(`Checking session: ${hostSessionId}`);
+
+                  // Check if game is already finished
+                  gameService.getGame(hostSessionId).then(game => {
+                    if (game && game.status === 'FINISHED') {
+                      log("Game already finished. Showing results.");
+                      setSessionData(game);
+
+                      const now = Date.now();
+                      const startTime = new Date(game.start_time!).getTime();
+                      if (game.winner_id === userData.id) {
+                        setGame({ myClicks: WIN_SCORE, opponentClicks: 0, myTime: now - startTime, opponentTime: null });
+                      } else {
+                        setGame({ myClicks: 0, opponentClicks: WIN_SCORE, myTime: null, opponentTime: now - startTime });
+                      }
+                      setMode('FINISHED');
+                    } else {
+                      log("Joining session...");
+                      joinSession(hostSessionId, userData.id);
+                    }
+                  });
                 }
-                setMode('FINISHED');
               } else {
-                log("Joining session...");
-                joinSession(hostSessionId, userData.id);
+                setStatus("Ошибка входа (DB)");
               }
             });
-          }
-        } else {
-          setStatus("Ошибка входа (DB)");
-        }
-      });
     } else {
-      setStatus("Ошибка: Запустите из Telegram");
+            setStatus("Ошибка: Запустите из Telegram");
     }
 
     return () => {
@@ -121,16 +132,16 @@ function App() {
   // Prevent Scrolling/Gestures on Body during Game
   useEffect(() => {
     const preventDefault = (e: Event) => e.preventDefault();
-    if (mode === 'RACING') {
-      document.body.style.overflow = 'hidden';
-      document.body.addEventListener('touchmove', preventDefault, { passive: false });
+          if (mode === 'RACING') {
+            document.body.style.overflow = 'hidden';
+          document.body.addEventListener('touchmove', preventDefault, {passive: false });
     } else {
-      document.body.style.overflow = '';
-      document.body.removeEventListener('touchmove', preventDefault);
+            document.body.style.overflow = '';
+          document.body.removeEventListener('touchmove', preventDefault);
     }
     return () => {
-      document.body.style.overflow = '';
-      document.body.removeEventListener('touchmove', preventDefault);
+            document.body.style.overflow = '';
+          document.body.removeEventListener('touchmove', preventDefault);
     };
   }, [mode]);
 
@@ -138,72 +149,72 @@ function App() {
   useEffect(() => {
     if (!sessionId) return;
 
-    log(`Subscribing to session ${sessionId}...`);
+          log(`Subscribing to session ${sessionId}...`);
 
-    const channel = supabase
-      .channel(`game_${sessionId}`)
-      .on(
-        'postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+          const channel = supabase
+          .channel(`game_${sessionId}`)
+          .on(
+          'postgres_changes',
+          {event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
         (payload) => {
           const newSession = payload.new as GameSession;
           handleSessionUpdate(newSession);
         }
-      )
+          )
       .subscribe((status) => {
         if (status === 'SUBSCRIBED') {
-          log("Realtime Connected 🟢");
+            log("Realtime Connected 🟢");
         }
       });
 
-    subscriptionRef.current = channel;
+          subscriptionRef.current = channel;
 
     return () => {
-      supabase.removeChannel(channel);
+            supabase.removeChannel(channel);
     };
   }, [sessionId]);
 
   // Handle Updates from DB
   const handleSessionUpdate = (newSession: GameSession) => {
-    setSessionData(newSession);
+            setSessionData(newSession);
 
-    if (!dbUser) return;
-    const amIHost = newSession.host_id === dbUser.id;
+          if (!dbUser) return;
+          const amIHost = newSession.host_id === dbUser.id;
 
-    // Update Scores
-    const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
-    const serverOppScore = amIHost ? newSession.guest_score : newSession.host_score;
+          // Update Scores
+          const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
+          const serverOppScore = amIHost ? newSession.guest_score : newSession.host_score;
 
     setGame(prev => ({
-      ...prev,
-      myClicks: Math.max(prev.myClicks, serverMyScore),
-      opponentClicks: serverOppScore
+            ...prev,
+            myClicks: Math.max(prev.myClicks, serverMyScore),
+          opponentClicks: serverOppScore
     }));
 
-    // State Transitions
-    if (newSession.status === 'RACING' && mode !== 'RACING') {
-      log("RACING STARTED!");
-      setMode('RACING');
-      const startT = new Date(newSession.start_time!).getTime();
-      startTimeRef.current = startT;
+          // State Transitions
+          if (newSession.status === 'RACING' && mode !== 'RACING') {
+            log("RACING STARTED!");
+          setMode('RACING');
+          const startT = new Date(newSession.start_time!).getTime();
+          startTimeRef.current = startT;
       // Vibrate only when actual start happens
       setTimeout(() => {
-        WebApp.HapticFeedback.notificationOccurred('success');
+            WebApp.HapticFeedback.notificationOccurred('success');
       }, Math.max(0, startT - Date.now()));
     }
 
-    // Only transition to FINISHED when server confirms it
-    if (newSession.status === 'FINISHED' && mode !== 'FINISHED') {
-      log("GAME FINISHED (Server Confirmed)!");
-      const now = Date.now();
-      const startTime = new Date(newSession.start_time!).getTime();
+          // Only transition to FINISHED when server confirms it
+          if (newSession.status === 'FINISHED' && mode !== 'FINISHED') {
+            log("GAME FINISHED (Server Confirmed)!");
+          const now = Date.now();
+          const startTime = new Date(newSession.start_time!).getTime();
 
-      if (newSession.winner_id === dbUser.id) {
-        setGame(prev => ({ ...prev, myTime: now - startTime, opponentTime: null }));
+          if (newSession.winner_id === dbUser.id) {
+            setGame(prev => ({ ...prev, myTime: now - startTime, opponentTime: null }));
       } else {
-        setGame(prev => ({ ...prev, myTime: null, opponentTime: now - startTime }));
+            setGame(prev => ({ ...prev, myTime: null, opponentTime: now - startTime }));
       }
-      setMode('FINISHED');
+          setMode('FINISHED');
     }
   };
 
@@ -211,117 +222,117 @@ function App() {
 
   const createGame = async () => {
     if (!dbUser) return;
-    setStatus("Создание игры...");
-    const id = await gameService.createGame(dbUser.id);
+          setStatus("Создание игры...");
+          const id = await gameService.createGame(dbUser.id);
 
-    if (id) {
-      setSessionId(id);
-      setMode('LOBBY');
-      setSessionData({
-        id,
-        host_id: dbUser.id,
-        guest_id: null,
-        status: 'LOBBY',
-        host_score: 0,
-        guest_score: 0,
-        start_time: null,
-        winner_id: null,
-        created_at: new Date().toISOString()
+          if (id) {
+            setSessionId(id);
+          setMode('LOBBY');
+          setSessionData({
+            id,
+            host_id: dbUser.id,
+          guest_id: null,
+          status: 'LOBBY',
+          host_score: 0,
+          guest_score: 0,
+          start_time: null,
+          winner_id: null,
+          created_at: new Date().toISOString()
       });
 
-      // Generate Link
-      // @ts-ignore
-      const botName = 'pukaboy_bot';
-      const appName = 'game';
-      const link = `https://t.me/${botName}/${appName}?startapp=join_${id}`;
-      WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("🏁 DUEL ME!")}`);
+          // Generate Link
+          // @ts-ignore
+          const botName = 'pukaboy_bot';
+          const appName = 'game';
+          const link = `https://t.me/${botName}/${appName}?startapp=join_${id}`;
+          WebApp.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent("🏁 DUEL ME!")}`);
     } else {
-      setStatus("Ошибка создания");
+            setStatus("Ошибка создания");
     }
   };
 
   const joinSession = async (sessId: string, myId: number) => {
-    setStatus("Вход в игру...");
-    const success = await gameService.joinGame(sessId, myId);
-    if (success) {
-      setSessionId(sessId);
-      setMode('LOBBY');
-      const initial = await gameService.getGame(sessId);
-      if (initial) {
-        setSessionData(initial);
+            setStatus("Вход в игру...");
+          const success = await gameService.joinGame(sessId, myId);
+          if (success) {
+            setSessionId(sessId);
+          setMode('LOBBY');
+          const initial = await gameService.getGame(sessId);
+          if (initial) {
+            setSessionData(initial);
       }
     } else {
-      setStatus("Не удалось войти (игра полная?)");
+            setStatus("Не удалось войти (игра полная?)");
     }
   };
 
   const doStart = async () => {
     if (!sessionId) return;
-    await gameService.startGame(sessionId);
+          await gameService.startGame(sessionId);
   };
 
   const handleTap = async () => {
     // 1. Check Mode
     if (mode !== 'RACING' || !sessionId || !dbUser) return;
 
-    // 2. Anti-Cheat / False Start Protection
-    // Re-calculate isCountingDown here to be safe inside the closure if needed, 
-    // or rely on current state. Since isCountingDown is derived from render state, 
-    // we should use the ref for precision or just the current variable.
-    // The `isCountingDown` variable in function scope is fresh on every render.
-    // However, if we are in a closure, we need to be careful.
-    // `handleTap` is recreated on every render so it captures fresh `isCountingDown`.
-    if (isCountingDown) {
+          // 2. Anti-Cheat / False Start Protection
+          // Re-calculate isCountingDown here to be safe inside the closure if needed, 
+          // or rely on current state. Since isCountingDown is derived from render state, 
+          // we should use the ref for precision or just the current variable.
+          // The `isCountingDown` variable in function scope is fresh on every render.
+          // However, if we are in a closure, we need to be careful.
+          // `handleTap` is recreated on every render so it captures fresh `isCountingDown`.
+          if (isCountingDown) {
       // Optional: Maybe vibrate 'error' if they tap too early?
       return;
     }
 
-    // Optimistic UI update
-    const newClicks = game.myClicks + 1;
-    setGame(prev => ({ ...prev, myClicks: newClicks }));
+          // Optimistic UI update
+          const newClicks = game.myClicks + 1;
+    setGame(prev => ({...prev, myClicks: newClicks }));
 
-    // Stronger Feedback
-    WebApp.HapticFeedback.impactOccurred('medium');
+          // Stronger Feedback
+          WebApp.HapticFeedback.impactOccurred('medium');
 
-    // Send to DB
-    await gameService.click(sessionId, dbUser.id);
+          // Send to DB
+          await gameService.click(sessionId, dbUser.id);
 
     if (newClicks >= WIN_SCORE) {
-      log("Reached Goal! Sending finish...");
-      await gameService.finishGame(sessionId, dbUser.id);
+            log("Reached Goal! Sending finish...");
+          await gameService.finishGame(sessionId, dbUser.id);
     }
   };
 
   const handleBuy = async (item: any) => {
-    log(`Buying ${item.name}...`);
-    if (!dbUser) return;
-    // MOCK PURCHASE
-    const newBal = await userService.updateBalance(dbUser.id, item.coins);
-    if (newBal !== null) {
-      setDbUser({ ...dbUser, puka_coins: newBal });
-      WebApp.HapticFeedback.notificationOccurred('success');
-      setMode('MENU');
+            log(`Buying ${item.name}...`);
+          if (!dbUser) return;
+          // MOCK PURCHASE
+          const newBal = await userService.updateBalance(dbUser.id, item.coins);
+          if (newBal !== null) {
+            setDbUser({ ...dbUser, puka_coins: newBal });
+          WebApp.HapticFeedback.notificationOccurred('success');
+          setMode('MENU');
     }
   };
 
   // Timer Effect
   useEffect(() => {
-    let animId: number;
+            let animId: number;
     const loop = () => {
       if (mode === 'RACING') {
         const now = Date.now();
-        const start = startTimeRef.current || now;
+          const start = startTimeRef.current || now;
 
-        if (now < start) {
-          setTimer(((start - now) / 1000).toFixed(1)); // Countdown
+          if (now < start) {
+            setTimer(((start - now) / 1000).toFixed(1)); // Countdown
         } else {
-          setTimer(((now - start) / 1000).toFixed(2)); // Race time
+            setTimer(((now - start) / 1000).toFixed(2)); // Race time
         }
-        animId = requestAnimationFrame(loop);
+          animId = requestAnimationFrame(loop);
       }
     };
-    if (mode === 'RACING') {
-      animId = requestAnimationFrame(loop);
+          if (mode === 'RACING') {
+            animId = requestAnimationFrame(loop);
     }
     return () => cancelAnimationFrame(animId);
   }, [mode]);
@@ -331,187 +342,187 @@ function App() {
 
   // Helper to get formatted progress
   const getProgress = (c: number) => Math.min((c / WIN_SCORE) * 100, 100);
-  const amIHost = sessionData?.host_id === dbUser?.id;
+          const amIHost = sessionData?.host_id === dbUser?.id;
 
-  return (
-    <>
-      {/* Debug Overlay */}
-      <div className="fixed bottom-0 left-0 w-full h-20 bg-black/80 text-[10px] text-green-400 font-mono p-2 pointer-events-none overflow-hidden z-50 opacity-50">
-        {logs.map((l, i) => <div key={i}>{l}</div>)}
-      </div>
-
-      {(function () {
-        if (mode === 'SHOP') {
-          return <ShopView onBack={() => setMode('MENU')} onBuy={handleBuy} />;
-        }
-
-        if (mode === 'MENU') {
           return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 relative overflow-hidden">
-              {/* MENU CONTENT UNCHANGED */}
-              <div className="absolute top-4 right-4 flex items-center gap-2 bg-gray-800/80 rounded-full px-4 py-2 border border-yellow-500/30">
-                <span className="text-xl">🍌</span>
-                <span className="font-mono font-bold text-yellow-400">{dbUser?.puka_coins ?? '...'}</span>
-              </div>
-
-              <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-500 mb-2 transform -skew-x-6 z-10">
-                PUKABOY
-              </h1>
-              <div className="text-xs tracking-[0.5em] text-blue-500 mb-1 z-10">REALTIME PVP</div>
-              <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">{VERSION}</div>
-
-              <div className="w-full space-y-4 z-10">
-                <button
-                  onClick={createGame}
-                  disabled={!dbUser}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-5 rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <span>⚔️</span> {status.startsWith('Создание') ? '...' : 'СОЗДАТЬ ДУЭЛЬ'}
-                </button>
-
-                <button
-                  onClick={() => setMode('SHOP')}
-                  className="w-full bg-gray-800 hover:bg-gray-700 text-yellow-400 font-bold py-3 rounded-xl border border-yellow-500/20 active:scale-95 flex items-center justify-center gap-2"
-                >
-                  <span>🛒</span> МАГАЗИН
-                </button>
-
-                <div className="text-center text-xs text-gray-500 h-4">{status}</div>
-              </div>
+          <>
+            {/* Debug Overlay */}
+            <div className="fixed bottom-0 left-0 w-full h-20 bg-black/80 text-[10px] text-green-400 font-mono p-2 pointer-events-none overflow-hidden z-50 opacity-50">
+              {logs.map((l, i) => <div key={i}>{l}</div>)}
             </div>
-          );
-        }
 
-        if (mode === 'LOBBY') {
-          // LOBBY CONTENT UNCHANGED
-          return (
-            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
-              <h2 className="text-xl font-bold mb-8 text-gray-400 tracking-widest">ОЖИДАНИЕ СОПЕРНИКА</h2>
+            {(function () {
+              if (mode === 'SHOP') {
+                return <ShopView onBack={() => setMode('MENU')} onBuy={handleBuy} />;
+              }
 
-              <div className="flex gap-4 items-center mb-12 w-full justify-center">
-                <div className="flex flex-col items-center">
-                  <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl mb-2 shadow-[0_0_15px_rgba(37,99,235,0.6)] border-4 border-gray-800">😎</div>
-                  <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">YOU</div>
-                </div>
-                <div className="text-2xl font-black text-gray-600 italic">VS</div>
-                <div className="flex flex-col items-center">
-                  <div className={`w-20 h-20 ${sessionData?.guest_id ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-gray-800 border-dashed border-2 border-gray-600'} rounded-full flex items-center justify-center text-3xl mb-2 border-4 border-gray-900 transition-all`}>
-                    {sessionData?.guest_id ? '😈' : '...'}
+              if (mode === 'MENU') {
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 relative overflow-hidden">
+                    {/* MENU CONTENT UNCHANGED */}
+                    <div className="absolute top-4 right-4 flex items-center gap-2 bg-gray-800/80 rounded-full px-4 py-2 border border-yellow-500/30">
+                      <span className="text-xl">🍌</span>
+                      <span className="font-mono font-bold text-yellow-400">{dbUser?.puka_coins ?? '...'}</span>
+                    </div>
+
+                    <h1 className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-green-500 mb-2 transform -skew-x-6 z-10">
+                      PUKABOY
+                    </h1>
+                    <div className="text-xs tracking-[0.5em] text-blue-500 mb-1 z-10">REALTIME PVP</div>
+                    <div className="text-[10px] text-gray-600 font-mono mb-8 z-10 opacity-50">{VERSION}</div>
+
+                    <div className="w-full space-y-4 z-10">
+                      <button
+                        onClick={createGame}
+                        disabled={!dbUser}
+                        className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 text-white font-bold py-5 rounded-xl shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all active:scale-95 flex items-center justify-center gap-2 disabled:opacity-50"
+                      >
+                        <span>⚔️</span> {status.startsWith('Создание') ? '...' : 'СОЗДАТЬ ДУЭЛЬ'}
+                      </button>
+
+                      <button
+                        onClick={() => setMode('SHOP')}
+                        className="w-full bg-gray-800 hover:bg-gray-700 text-yellow-400 font-bold py-3 rounded-xl border border-yellow-500/20 active:scale-95 flex items-center justify-center gap-2"
+                      >
+                        <span>🛒</span> МАГАЗИН
+                      </button>
+
+                      <div className="text-center text-xs text-gray-500 h-4">{status}</div>
+                    </div>
                   </div>
-                  <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">{sessionData?.guest_id ? 'Opponent' : 'Ждем...'}</div>
-                </div>
-              </div>
+                );
+              }
 
-              {sessionData?.guest_id && amIHost && (
-                <button
-                  onClick={doStart}
-                  className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black text-xl py-5 rounded-2xl shadow-[0_5px_0_rgb(21,128,61)] active:shadow-none active:translate-y-[5px] transition-all animate-pulse"
-                >
-                  ПОГНАЛИ! 🚀
-                </button>
-              )}
+              if (mode === 'LOBBY') {
+                // LOBBY CONTENT UNCHANGED
+                return (
+                  <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
+                    <h2 className="text-xl font-bold mb-8 text-gray-400 tracking-widest">ОЖИДАНИЕ СОПЕРНИКА</h2>
 
-              {sessionData?.guest_id && !amIHost && (
-                <div className="text-green-400 animate-pulse bg-green-900/20 px-4 py-2 rounded-lg">Организатор запускает гонку...</div>
-              )}
+                    <div className="flex gap-4 items-center mb-12 w-full justify-center">
+                      <div className="flex flex-col items-center">
+                        <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl mb-2 shadow-[0_0_15px_rgba(37,99,235,0.6)] border-4 border-gray-800">😎</div>
+                        <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">YOU</div>
+                      </div>
+                      <div className="text-2xl font-black text-gray-600 italic">VS</div>
+                      <div className="flex flex-col items-center">
+                        <div className={`w-20 h-20 ${sessionData?.guest_id ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-gray-800 border-dashed border-2 border-gray-600'} rounded-full flex items-center justify-center text-3xl mb-2 border-4 border-gray-900 transition-all`}>
+                          {sessionData?.guest_id ? '😈' : '...'}
+                        </div>
+                        <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">{sessionData?.guest_id ? 'Opponent' : 'Ждем...'}</div>
+                      </div>
+                    </div>
 
-              {!sessionData?.guest_id && (
-                <div className="text-center text-gray-500 text-xs">
-                  {(() => {
-                    const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
-                    const diff = Date.now() - createdAt;
-                    if (diff > 5 * 60 * 1000) { // 5 minutes
-                      return <span className="text-red-500">Лобби устарело. Создайте новую игру.</span>;
-                    }
-                    return 'Пригласи друга через кнопку "Share" в меню...';
-                  })()}
-                </div>
-              )}
+                    {sessionData?.guest_id && amIHost && (
+                      <button
+                        onClick={doStart}
+                        className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black text-xl py-5 rounded-2xl shadow-[0_5px_0_rgb(21,128,61)] active:shadow-none active:translate-y-[5px] transition-all animate-pulse"
+                      >
+                        ПОГНАЛИ! 🚀
+                      </button>
+                    )}
 
-              <button
-                onClick={() => { setMode('MENU'); setSessionId(null); }}
-                className="mt-8 text-gray-500 underline text-xs"
-              >
-                {(() => {
-                  const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
-                  const diff = Date.now() - createdAt;
-                  return diff > 5 * 60 * 1000 ? 'В меню' : 'Отмена';
-                })()}
-              </button>
-            </div>
-          );
-        }
+                    {sessionData?.guest_id && !amIHost && (
+                      <div className="text-green-400 animate-pulse bg-green-900/20 px-4 py-2 rounded-lg">Организатор запускает гонку...</div>
+                    )}
 
-        return (
-          // Added touch-none to prevent browser gestures
-          <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-none select-none">
-            {/* Header / Scoreboard */}
-            <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${mode === 'FINISHED' ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
-              <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'} ${isCountingDown ? 'text-red-500 scale-150 animate-pulse' : ''}`}>
-                {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : (isCountingDown ? Math.ceil(timeToStart / 1000) : timer)}
-              </span>
-              {isCountingDown && <span className="text-xs font-bold text-red-500 tracking-widest uppercase">Get Ready</span>}
-            </div>
+                    {!sessionData?.guest_id && (
+                      <div className="text-center text-gray-500 text-xs">
+                        {(() => {
+                          const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
+                          const diff = Date.now() - createdAt;
+                          if (diff > 5 * 60 * 1000) { // 5 minutes
+                            return <span className="text-red-500">Лобби устарело. Создайте новую игру.</span>;
+                          }
+                          return 'Пригласи друга через кнопку "Share" в меню...';
+                        })()}
+                      </div>
+                    )}
 
-            {/* Race Track */}
-            <div className="flex-1 flex relative">
-              <div className="flex-1 border-r border-gray-800 relative bg-blue-900/5">
-                <div className="absolute inset-x-0 bottom-0 bg-blue-600/30 transition-all duration-75 ease-out" style={{ height: `${getProgress(game.myClicks)}%` }}></div>
-                <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-out pb-4" style={{ bottom: `${getProgress(game.myClicks)}%` }}>🚀</div>
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-blue-500 text-xs tracking-wider bg-blue-900/20 px-2 rounded">YOU</div>
-              </div>
-
-              <div className="flex-1 relative bg-red-900/5">
-                <div className="absolute inset-x-0 bottom-0 bg-red-600/30 transition-all duration-75 ease-linear" style={{ height: `${getProgress(game.opponentClicks)}%` }}></div>
-                <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-linear pb-4" style={{ bottom: `${getProgress(game.opponentClicks)}%` }}>😈</div>
-                <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-red-500 text-xs tracking-wider bg-red-900/20 px-2 rounded">OPP</div>
-              </div>
-
-              {/* COUNTDOWN OVERLAY */}
-              {isCountingDown && (
-                <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
-                  <div className="text-9xl font-black text-white animate-ping">
-                    {Math.ceil(timeToStart / 1000)}
+                    <button
+                      onClick={() => { setMode('MENU'); setSessionId(null); }}
+                      className="mt-8 text-gray-500 underline text-xs"
+                    >
+                      {(() => {
+                        const createdAt = new Date(sessionData?.created_at || Date.now()).getTime();
+                        const diff = Date.now() - createdAt;
+                        return diff > 5 * 60 * 1000 ? 'В меню' : 'Отмена';
+                      })()}
+                    </button>
                   </div>
-                </div>
-              )}
+                );
+              }
 
-              {mode === 'FINISHED' && (
-                <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center animate-in fade-in duration-300">
-                  <div className="text-8xl mb-4 animate-bounce">
-                    {sessionData?.winner_id === dbUser?.id ? '🏆' : '🐢'}
+              return (
+                // Added touch-none to prevent browser gestures
+                <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-none select-none">
+                  {/* Header / Scoreboard */}
+                  <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${mode === 'FINISHED' ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
+                    <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'} ${isCountingDown ? 'text-red-500 scale-150 animate-pulse' : ''}`}>
+                      {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : (isCountingDown ? Math.ceil(timeToStart / 1000) : timer)}
+                    </span>
+                    {isCountingDown && <span className="text-xs font-bold text-red-500 tracking-widest uppercase">Get Ready</span>}
                   </div>
-                  <h2 className={`text-4xl font-black italic mb-8 ${sessionData?.winner_id === dbUser?.id ? 'text-yellow-400' : 'text-gray-400'}`}>
-                    {sessionData?.winner_id === dbUser?.id ? 'ТЫ ПОБЕДИЛ!' : 'ПРОИГРАЛ'}
-                  </h2>
-                  <button onClick={() => { setMode('MENU'); setSessionId(null); setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); }} className="bg-white text-black font-bold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors">В МЕНЮ</button>
-                </div>
-              )}
-            </div>
 
-            {/* CLICK AREA */}
-            <div
-              className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative active:bg-gray-700 transition-colors"
-              onPointerDown={(e) => {
-                handleTap();
-                // Optional: Visual feedback on the whole container
-              }}
-            >
-              <div className="absolute top-3 w-16 h-1 bg-gray-600/30 rounded-full"></div>
-              {/* Button is now just a visual indicator, clicks are handled by container */}
-              <div
-                className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4 pointer-events-none
+                  {/* Race Track */}
+                  <div className="flex-1 flex relative">
+                    <div className="flex-1 border-r border-gray-800 relative bg-blue-900/5">
+                      <div className="absolute inset-x-0 bottom-0 bg-blue-600/30 transition-all duration-75 ease-out" style={{ height: `${getProgress(game.myClicks)}%` }}></div>
+                      <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-out pb-4" style={{ bottom: `${getProgress(game.myClicks)}%` }}>🚀</div>
+                      <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-blue-500 text-xs tracking-wider bg-blue-900/20 px-2 rounded">YOU</div>
+                    </div>
+
+                    <div className="flex-1 relative bg-red-900/5">
+                      <div className="absolute inset-x-0 bottom-0 bg-red-600/30 transition-all duration-75 ease-linear" style={{ height: `${getProgress(game.opponentClicks)}%` }}></div>
+                      <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-linear pb-4" style={{ bottom: `${getProgress(game.opponentClicks)}%` }}>😈</div>
+                      <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-red-500 text-xs tracking-wider bg-red-900/20 px-2 rounded">OPP</div>
+                    </div>
+
+                    {/* COUNTDOWN OVERLAY */}
+                    {isCountingDown && (
+                      <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/20 backdrop-blur-[2px]">
+                        <div className="text-9xl font-black text-white animate-ping">
+                          {Math.ceil(timeToStart / 1000)}
+                        </div>
+                      </div>
+                    )}
+
+                    {mode === 'FINISHED' && (
+                      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm z-30 flex flex-col items-center justify-center animate-in fade-in duration-300">
+                        <div className="text-8xl mb-4 animate-bounce">
+                          {sessionData?.winner_id === dbUser?.id ? '🏆' : '🐢'}
+                        </div>
+                        <h2 className={`text-4xl font-black italic mb-8 ${sessionData?.winner_id === dbUser?.id ? 'text-yellow-400' : 'text-gray-400'}`}>
+                          {sessionData?.winner_id === dbUser?.id ? 'ТЫ ПОБЕДИЛ!' : 'ПРОИГРАЛ'}
+                        </h2>
+                        <button onClick={() => { setMode('MENU'); setSessionId(null); setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); }} className="bg-white text-black font-bold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors">В МЕНЮ</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* CLICK AREA */}
+                  <div
+                    className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative active:bg-gray-700 transition-colors"
+                    onPointerDown={(e) => {
+                      handleTap();
+                      // Optional: Visual feedback on the whole container
+                    }}
+                  >
+                    <div className="absolute top-3 w-16 h-1 bg-gray-600/30 rounded-full"></div>
+                    {/* Button is now just a visual indicator, clicks are handled by container */}
+                    <div
+                      className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4 pointer-events-none
                     ${(mode !== 'RACING' || isCountingDown) ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] transform scale-105'}
                  `}
-              >
-                <span className="text-4xl font-black text-white drop-shadow-md select-none">{isCountingDown ? 'WAIT' : 'TAP!'}</span>
-                <span className="text-xs font-mono text-blue-200 mt-1">{game.myClicks}/{WIN_SCORE}</span>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-    </>
-  );
+                    >
+                      <span className="text-4xl font-black text-white drop-shadow-md select-none">{isCountingDown ? 'WAIT' : 'TAP!'}</span>
+                      <span className="text-xs font-mono text-blue-200 mt-1">{game.myClicks}/{WIN_SCORE}</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </>
+          );
 }
-export default App
+          export default App
