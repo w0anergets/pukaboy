@@ -21,7 +21,7 @@ interface GameState {
 // --- Constants ---
 // --- Constants ---
 const WIN_SCORE = 100;
-const VERSION = "v0.3.6 (Rematch & Avatars)";
+const VERSION = "v0.3.7 (Stability)";
 
 // Debug Logger Helper
 const useLogger = () => {
