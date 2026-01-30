@@ -4,8 +4,10 @@ import { gameService } from '../services/gameService';
 import type { GameSession } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import WebApp from '@twa-dev/sdk';
-import spritesBody from '../assets/sprites/sticker_body.png';
-import spritesFlame from '../assets/sprites/sticker_flame.png';
+import spriteBody from '../assets/sprites/sticker_body_glitch.png';
+import spriteFlame from '../assets/sprites/sticker_flame_glitch.png';
+import spriteCloud from '../assets/sprites/sticker_cloud.png';
+import spriteTrail from '../assets/sprites/sticker_trail.png';
 import { soundService } from '../services/soundService';
 
 interface GameScreenProps {
@@ -15,23 +17,26 @@ interface GameScreenProps {
     onFinish: (session: GameSession) => void;
 }
 
-const WIN_SCORE = 100;
+const WIN_SCORE = 150; // Increased score for longer fun
 
-// Particle System for Text (PUK, TAP, BOY)
 interface Particle {
     id: number;
-    text: string;
+    type: 'text' | 'cloud' | 'spark';
+    text?: string;
     x: number;
     y: number;
     vx: number;
     vy: number;
+    scale: number;
     life: number;
+    rotation: number;
+    vRot: number;
 }
 
 export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initialSession, onFinish }) => {
     // State
     const [session, setSession] = useState<GameSession>(initialSession);
-    const [myScore, setMyScore] = useState(0); // Optimistic Score
+    const [myScore, setMyScore] = useState(0);
     const [oppScore, setOppScore] = useState(0);
 
     const [countdown, setCountdown] = useState<number | null>(null);
@@ -39,8 +44,10 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
 
     // Juice State
     const [particles, setParticles] = useState<Particle[]>([]);
-    const [cps, setCps] = useState(0); // Clicks Per Second
+    const [shake, setShake] = useState(0);
+    const [cps, setCps] = useState(0);
     const clicksRef = useRef<number[]>([]);
+    const bgOffset = useRef(0);
 
     // Refs
     const myScoreRef = useRef(0);
@@ -59,31 +66,41 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
         soundService.playStart();
     }, []);
 
-    // CPS Tracker
-    useEffect(() => {
-        const interval = setInterval(() => {
-            const now = Date.now();
-            clicksRef.current = clicksRef.current.filter(t => now - t < 1000);
-            setCps(clicksRef.current.length);
-        }, 100);
-        return () => clearInterval(interval);
-    }, []);
-
-    // Particle Game Loop
+    // Game Loop (Animation & Logic)
     useEffect(() => {
         let frameId: number;
+        let lastTime = Date.now();
+
         const loop = () => {
+            const now = Date.now();
+            const dt = (now - lastTime) / 16.66; // Normalize to 60fps
+            lastTime = now;
+
+            // Update CPS
+            clicksRef.current = clicksRef.current.filter(t => now - t < 1000);
+            setCps(clicksRef.current.length);
+
+            // Update Background Scroll (Warp Speed)
+            bgOffset.current += (10 + (cps * 2)) * dt;
+
+            // Update Shake
+            if (shake > 0) setShake(prev => Math.max(0, prev - 1 * dt));
+
+            // Update Particles
             setParticles(prev => prev.map(p => ({
                 ...p,
-                x: p.x + p.vx,
-                y: p.y + p.vy,
-                life: p.life - 0.05
+                x: p.x + p.vx * dt,
+                y: p.y + p.vy * dt,
+                rotation: p.rotation + p.vRot * dt,
+                life: p.life - (p.type === 'cloud' ? 0.02 : 0.03) * dt,
+                scale: p.type === 'cloud' ? p.scale + 0.01 * dt : p.scale
             })).filter(p => p.life > 0));
+
             frameId = requestAnimationFrame(loop);
         };
         loop();
         return () => cancelAnimationFrame(frameId);
-    }, []);
+    }, [cps, shake]);
 
 
     // 1. Countdown Logic
@@ -100,8 +117,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     if (d <= 0) {
                         setCountdown(null);
                         clearInterval(interval);
-                        soundService.playStart(); // Go sound
+                        soundService.playStart();
                         WebApp.HapticFeedback.notificationOccurred('success');
+                        setShake(20); // Big shake on start
                     } else {
                         const sec = Math.ceil(d / 1000);
                         if (sec !== countdown) {
@@ -128,7 +146,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
         return () => cancelAnimationFrame(reqId);
     }, [session.start_time, countdown]);
 
-    // 3. Realtime Subscription
+    // 3. Realtime Sync
     useEffect(() => {
         const channel = supabase
             .channel(`game_${sessionId}`)
@@ -138,18 +156,11 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                 (payload) => {
                     const newSess = payload.new as GameSession;
                     setSession(newSess);
-
-                    // Sync Opponent Score (Always)
                     const sOppScore = amIHost ? newSess.guest_score : newSess.host_score;
                     setOppScore(sOppScore);
-
-                    // Sync My Score (Only if Server is ahead - rare)
                     const sMyScore = amIHost ? newSess.host_score : newSess.guest_score;
-                    if (sMyScore > myScoreRef.current) {
-                        setMyScore(sMyScore);
-                    }
+                    if (sMyScore > myScoreRef.current) setMyScore(sMyScore);
 
-                    // Check Finish
                     if (newSess.status === 'FINISHED' && !isFinishedRef.current) {
                         isFinishedRef.current = true;
                         soundService.playWin();
@@ -158,177 +169,200 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                 }
             )
             .subscribe();
-
-        return () => {
-            supabase.removeChannel(channel);
-        };
+        return () => { supabase.removeChannel(channel); };
     }, [sessionId, amIHost, onFinish]);
 
-    // 4. Interaction (TAP)
+    // 4. Interaction
     const handleTap = (e: React.PointerEvent) => {
         if (countdown !== null) return;
-
-        // Prevent multi-touch logic is in App.tsx, but ensure here too just in case
         if (!e.isPrimary) return;
 
         clicksRef.current.push(Date.now());
+        setShake(5);
 
-        // Spawn Text Particle
-        const words = ['PUK', 'TAP', 'BOY', 'GO!', '🚀'];
-        const word = words[Math.floor(Math.random() * words.length)];
-        // Random drift direction
-        const angle = Math.random() * Math.PI * 2;
-        const speed = 2 + Math.random() * 3;
-
-        setParticles(prev => [...prev, {
-            id: Date.now() + Math.random(),
-            text: word,
-            x: e.clientX,
-            y: e.clientY,
-            vx: Math.cos(angle) * speed,
-            vy: Math.sin(angle) * speed,
-            life: 1.0
-        }]);
+        // Spawn Particles
+        // 1. Text
+        const words = ['PUK!', 'TAP!', 'BOY!', 'GOGO!', '🔥'];
+        setParticles(prev => [
+            ...prev,
+            {
+                id: Math.random(),
+                type: 'text',
+                text: words[Math.floor(Math.random() * words.length)],
+                x: e.clientX,
+                y: e.clientY,
+                vx: (Math.random() - 0.5) * 5,
+                vy: -5 - Math.random() * 5,
+                scale: 1,
+                life: 1.0,
+                rotation: (Math.random() - 0.5) * 30,
+                vRot: (Math.random() - 0.5) * 10
+            },
+            // 2. Cloud Smoke at bottom
+            {
+                id: Math.random(),
+                type: 'cloud',
+                x: window.innerWidth / 2 + (Math.random() - 0.5) * 100,
+                y: window.innerHeight + 50,
+                vx: (Math.random() - 0.5) * 2,
+                vy: -10 - Math.random() * 10, // Fast up
+                scale: 0.5 + Math.random(),
+                life: 1.0,
+                rotation: Math.random() * 360,
+                vRot: (Math.random() - 0.5) * 5
+            }
+        ]);
 
         setMyScore(prev => {
             if (prev >= WIN_SCORE) return prev;
             const newScore = prev + 1;
-
-            WebApp.HapticFeedback.impactOccurred('light');
+            WebApp.HapticFeedback.impactOccurred('medium');
             soundService.playTap();
             gameService.click(sessionId, user.id);
-
-            if (newScore >= WIN_SCORE) {
-                gameService.finishGame(sessionId, user.id);
-            }
+            if (newScore >= WIN_SCORE) gameService.finishGame(sessionId, user.id);
             return newScore;
         });
     };
 
-    // Calculate Vertical Positions (50% is center)
-    // If I have higher CPS/Score, I move up relative to opponent?
-    // User requested: "Who is faster moves up".
-    // Let's use CPS + Score Delta to control Y position.
-
-    // Base position = 50%
-    // If My Score > Opp Score -> Move Up (Subtract %)
-    // Max movement +/- 30%
-
-    const scoreDelta = myScore - oppScore;
-    const myPosOffset = Math.max(-30, Math.min(30, scoreDelta * 2));
-    // If I am leading (positive delta), my Y should be smaller (higher on screen).
-    // So 50 - myPosOffset.
-
-    const myY = 50 - myPosOffset;
-    const oppY = 50 + myPosOffset; // Opponent moves opposite
-
+    // Render Helpers
     const getProgress = (s: number) => Math.min((s / WIN_SCORE) * 100, 100);
+    const scoreDelta = myScore - oppScore;
+    // Dynamic Positioning: 50% base. Max delta moves +/- 30%. CPS adds jitter.
+    const myY = 50 - Math.max(-30, Math.min(30, scoreDelta * 1.5)) - (cps > 5 ? 1 : 0);
+    const oppY = 50 + Math.max(-30, Math.min(30, scoreDelta * 1.5));
+
+    // Intro/Outro Transforms
+    const isWinner = isFinishedRef.current && myScore >= WIN_SCORE;
+    const isLoser = isFinishedRef.current && oppScore >= WIN_SCORE;
+
+    const shakeStyle = { transform: `translate(${(Math.random() - 0.5) * shake}px, ${(Math.random() - 0.5) * shake}px)` };
 
     return (
         <div
-            className="flex flex-col h-screen bg-black overflow-hidden select-none relative"
+            className="flex flex-col h-screen bg-[#111] overflow-hidden select-none relative"
             style={{ touchAction: 'none' }}
         >
-            {/* 1. Warp Speed Background */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-                {/* CSS Animation for Stars/Particles needed here. Using a simple placeholder for now */}
-                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-800 via-gray-900 to-black" />
+            {/* --- LAYERS --- */}
 
-                {/* Moving Stars Effect (Fake using CSS grid or repetitivebg) */}
-                <div className="absolute inset-0 opacity-50 animate-warp-speed"
+            {/* 1. WARP SPEED BACKGROUND */}
+            <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                {/* Gradient Base */}
+                <div className="absolute inset-0 bg-gradient-to-b from-purple-900 via-black to-blue-900" />
+
+                {/* Moving Grid/Stars */}
+                <div
+                    className="absolute inset-x-0 -top-[100%] h-[300%] opacity-40"
                     style={{
-                        backgroundImage: 'radial-gradient(white 1px, transparent 1px)',
-                        backgroundSize: '40px 40px',
-                        animation: `warpSpeed ${Math.max(0.1, 1 - (cps / 20))}s linear infinite`
+                        backgroundImage: `repeating-linear-gradient(transparent 0, transparent 49px, rgba(255,255,255,0.1) 50px),
+                                          repeating-linear-gradient(90deg, transparent 0, transparent 49px, rgba(255,255,255,0.1) 50px)`,
+                        backgroundSize: '100% 100px',
+                        transform: `translateY(${bgOffset.current % 100}px) perspective(500px) rotateX(20deg)`
+                    }}
+                />
+
+                {/* Speed Lines Overlay */}
+                <div
+                    className="absolute inset-0 opacity-20 mix-blend-overlay"
+                    style={{
+                        backgroundImage: `repeating-radial-gradient(circle at 50% 50%, white, transparent 2px, transparent 100px)`,
+                        transform: `scale(${1 + (cps / 10)}) translateZ(0)`
                     }}
                 />
             </div>
 
-            <style>{`
-                @keyframes warpSpeed {
-                    from { transform: translateY(-40px); }
-                    to { transform: translateY(0); }
-                }
-            `}</style>
-
-            {/* Vignette (Intense) */}
-            <div
-                className="absolute inset-0 pointer-events-none z-10 bg-[radial-gradient(circle_at_center,transparent_0%,black_120%)] transition-opacity duration-100"
-                style={{ opacity: 0.3 + Math.min(cps / 20, 0.6) }}
-            />
-
-
-            {/* 2. Side Progress Bars (Earth -> Moon) */}
-            <div className="absolute left-2 top-4 bottom-4 w-6 bg-gray-800 border-2 border-white rounded-full flex flex-col-reverse p-1 z-20 overflow-hidden">
-                <div
-                    className="w-full bg-[#DFFF00] rounded-full transition-all duration-100 ease-linear shadow-[0_0_10px_#DFFF00]"
-                    style={{ height: `${getProgress(myScore)}%` }}
-                />
+            {/* 2. SIDE PROGRESS BARS (Arrows) */}
+            {/* Left Box (My Progress) */}
+            <div className="absolute left-4 top-4 bottom-4 w-8 z-20 flex flex-col items-center">
+                <div className="flex-1 w-full bg-gray-800/80 border-2 border-white rounded-t-full rounded-b-lg relative overflow-hidden">
+                    {/* The Arrow Shape Mask or just Fill */}
+                    <div
+                        className="absolute bottom-0 w-full bg-[#DFFF00] transition-all duration-100 ease-linear shadow-[0_0_15px_#DFFF00]"
+                        style={{ height: `${getProgress(myScore)}%` }}
+                    />
+                    {/* Checkered pattern over bar */}
+                    <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/checkerboard-cross.png')] mix-blend-multiply" />
+                </div>
+                {/* Avatar Icon at bottom */}
+                <div className="w-10 h-10 -mt-4 rounded-full border-2 border-white bg-white z-30">
+                    <img src={user.avatar_url || ''} className="w-full h-full object-cover rounded-full" />
+                </div>
             </div>
 
-            <div className="absolute right-2 top-4 bottom-4 w-6 bg-gray-800 border-2 border-white rounded-full flex flex-col-reverse p-1 z-20 overflow-hidden">
-                <div
-                    className="w-full bg-[#FF00FF] rounded-full transition-all duration-100 ease-linear shadow-[0_0_10px_#FF00FF]"
-                    style={{ height: `${getProgress(oppScore)}%` }}
-                />
+            {/* Right Box (Opponent Progress) */}
+            <div className="absolute right-4 top-4 bottom-4 w-8 z-20 flex flex-col items-center">
+                <div className="flex-1 w-full bg-gray-800/80 border-2 border-white rounded-t-full rounded-b-lg relative overflow-hidden">
+                    <div
+                        className="absolute bottom-0 w-full bg-[#FF00FF] transition-all duration-100 ease-linear shadow-[0_0_15px_#FF00FF]"
+                        style={{ height: `${getProgress(oppScore)}%` }}
+                    />
+                    <div className="absolute inset-0 opacity-20 bg-[url('https://www.transparenttextures.com/patterns/checkerboard-cross.png')] mix-blend-multiply" />
+                </div>
+                <div className="w-10 h-10 -mt-4 rounded-full border-2 border-white bg-gray-300 z-30 flex items-center justify-center font-bold text-xs text-black">
+                    OPP
+                </div>
             </div>
 
 
-            {/* 3. Center Stage (Avatars) */}
-            <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+            {/* 3. CENTER STAGE (Avatars) */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none" style={shakeStyle}>
 
                 {/* OPPONENT */}
                 <div
                     className="absolute transition-all duration-300 ease-out flex flex-col items-center"
                     style={{
                         top: `${oppY}%`,
-                        left: '25%', // Left lane? Or overlap? User said "Side by side"? "Start middle"
-                        transform: `translate(-50%, -50%) scale(${0.8}) opacity(0.8)`
+                        left: '30%',
+                        zIndex: oppScore > myScore ? 30 : 10,
+                        transform: `scale(${0.9}) translate(-50%, -50%) ${isLoser ? 'rotate(90deg) translate(500px, 0)' : ''}`
                     }}
                 >
-                    <div className="relative w-32 h-32 animate-bounce-slow">
-                        {/* Flame */}
-                        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-16 h-24 z-0 animate-pulse">
-                            <img src={spritesFlame} className="w-full h-full object-contain rotate-180 opacity-50" />
-                        </div>
-                        {/* Body */}
-                        <div className="absolute top-0 left-0 w-full h-full z-10">
-                            <img src={spritesBody} className="w-full h-full object-contain drop-shadow-[0_0_2px_white]" />
-                        </div>
-                        {/* Head */}
-                        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full border-2 border-white bg-gray-300 z-20 overflow-hidden">
-                            <div className="w-full h-full flex items-center justify-center font-bold text-[8px] text-center">OPP</div>
+                    <div className="relative w-40 h-40">
+                        {/* BLEND MODE IMAGE: Screen mode removes black bg, keeps colors */}
+                        <img
+                            src={spriteBody}
+                            className="w-full h-full object-contain mix-blend-screen drop-shadow-[0_0_2px_rgba(255,255,255,0.5)] grayscale opacity-80"
+                        />
+                        {/* Opponent Identity */}
+                        <div className="absolute top-[10%] left-[35%] w-[30%] h-[30%] rounded-full overflow-hidden opacity-50">
+                            <div className="w-full h-full bg-black text-white flex items-center justify-center text-[10px] font-bold">OPP</div>
                         </div>
                     </div>
                 </div>
 
-                {/* PLAYER (ME) */}
+                {/* MY PLAYER */}
                 <div
                     className="absolute transition-all duration-100 ease-linear flex flex-col items-center"
                     style={{
-                        top: `${myY}%`,
-                        left: '50%', // Center
-                        transform: `translate(-50%, -50%) scale(${1 + (cps / 50)})` // Scale with speed
+                        top: isWinner ? '-20%' : `${myY}%`,
+                        left: '50%',
+                        zIndex: 20,
+                        transform: `translate(-50%, -50%) scale(${1 + cps / 40}) rotate(${cps / 2}deg)`,
+                        transition: isWinner ? 'top 1s ease-in' : 'all 0.1s linear'
                     }}
                 >
-                    <div className="relative w-48 h-48">
-                        {/* Flame (Huge) */}
-                        <div className="absolute top-32 left-1/2 -translate-x-1/2 w-24 h-48 z-0">
+                    <div className="relative w-64 h-64">
+                        {/* Trail */}
+                        <div className="absolute top-[80%] left-1/2 -translate-x-1/2 w-20 h-[200px] origin-top opacity-80 mix-blend-screen animate-pulse">
+                            <img src={spriteTrail} className="w-full h-full object-cover opacity-60" />
+                        </div>
+
+                        {/* Flame */}
+                        <div className="absolute top-[60%] left-1/2 -translate-x-1/2 w-32 h-48 mix-blend-screen origin-top transform -translate-y-4">
                             <img
-                                src={spritesFlame}
-                                className="w-full h-full object-contain rotate-180 origin-top"
-                                style={{ transform: `rotate(180deg) scaleY(${0.5 + Math.min(cps / 10, 1)})` }}
+                                src={spriteFlame}
+                                className="w-full h-full object-contain"
+                                style={{ transform: `scaleY(${0.5 + Math.min(cps / 15, 1.5)})` }}
                             />
                         </div>
 
-                        {/* Body */}
-                        <div className="absolute top-0 left-0 w-full h-full z-10 animate-rubble">
-                            <img src={spritesBody} className="w-full h-full object-contain filter drop-shadow-[0_0_4px_white]" />
-                        </div>
+                        {/* Body (Sticker) */}
+                        <div className="relative w-full h-full mix-blend-screen filter brightness-110 contrast-125">
+                            <img src={spriteBody} className="w-full h-full object-contain drop-shadow-[0_0_5px_cyan]" />
 
-                        {/* Head */}
-                        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-20 h-20 rounded-full border-4 border-white bg-white z-20 overflow-hidden shadow-lg">
-                            <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name}`} className="w-full h-full object-cover" />
+                            {/* Face Overlay (Positioned roughly over the helmet area in sprite) */}
+                            <div className="absolute top-[22%] left-[45%] w-[22%] h-[22%] rounded-full overflow-hidden border-2 border-black bg-white z-10 transform -rotate-12">
+                                <img src={user.avatar_url || ''} className="w-full h-full object-cover" />
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -336,42 +370,59 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
             </div>
 
 
-            {/* 4. Particle Layer */}
-            {particles.map(p => (
-                <div
-                    key={p.id}
-                    className="absolute pointer-events-none z-40 text-black font-black text-2xl"
-                    style={{
-                        left: p.x,
-                        top: p.y,
-                        opacity: p.life,
-                        transform: `scale(${p.life}) rotate(${p.vx * 10}deg)`,
-                        textShadow: '2px 2px 0px white' // Sticker outline effect
-                    }}
-                >
-                    {p.text}
-                </div>
-            ))}
+            {/* 4. PARTICLE SYSTEM */}
+            {particles.map(p => {
+                if (p.type === 'cloud') {
+                    return (
+                        <div key={p.id}
+                            className="absolute pointer-events-none mix-blend-screen opacity-50"
+                            style={{
+                                left: p.x, top: p.y,
+                                transform: `translate(-50%, -50%) scale(${p.scale}) rotate(${p.rotation}deg)`,
+                                opacity: p.life
+                            }}
+                        >
+                            <img src={spriteCloud} className="w-24 h-24 object-contain" />
+                        </div>
+                    )
+                }
+                return (
+                    <div
+                        key={p.id}
+                        className="absolute pointer-events-none z-50 font-black text-4xl text-[#DFFF00]"
+                        style={{
+                            left: p.x, top: p.y,
+                            transform: `translate(-50%, -50%) rotate(${p.rotation}deg) scale(${p.life})`,
+                            opacity: p.life,
+                            textShadow: '3px 3px 0px black, -1px -1px 0 black'
+                        }}
+                    >
+                        {p.text}
+                    </div>
+                )
+            })}
 
 
-            {/* 5. Tap Zone */}
+            {/* 5. TAP LAYER */}
             <div
-                className="absolute inset-0 z-50 flex items-center justify-center"
+                className="absolute inset-0 z-50 flex items-center justify-center cursor-pointer"
                 onPointerDown={handleTap}
             >
-                {/* Countdown Overlay */}
+                {/* Countdown */}
                 {countdown !== null && (
-                    <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md">
-                        <div className="text-[10rem] font-black text-[#DFFF00] animate-ping stroke-black stroke-2" style={{ WebkitTextStroke: '4px black' }}>
+                    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-[60] backdrop-blur-sm">
+                        <div className="text-[12rem] font-black text-transparent bg-clip-text bg-gradient-to-br from-yellow-400 to-red-600 animate-ping" style={{ WebkitTextStroke: '6px white' }}>
                             {countdown}
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Top Timer */}
-            <div className="absolute top-safe px-4 py-2 bg-black/50 backdrop-blur rounded-full border border-white/20 z-50 mt-4 mx-auto left-0 right-0 w-32 flex justify-center">
-                <span className="font-mono text-xl font-bold text-white">{timer}</span>
+            {/* Timer Tab */}
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-50">
+                <div className="bg-black/50 border-2 border-white/50 px-6 py-1 rounded-full backdrop-blur">
+                    <span className="font-mono text-white text-xl font-bold tracking-widest">{timer}</span>
+                </div>
             </div>
 
         </div>
