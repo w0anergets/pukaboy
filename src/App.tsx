@@ -7,7 +7,8 @@ import { MenuScreen } from './screens/MenuScreen';
 import { LobbyScreen } from './screens/LobbyScreen';
 import { GameScreen } from './screens/GameScreen';
 import { ResultScreen } from './screens/ResultScreen';
-import { gameService, GameSession } from './services/gameService';
+import { gameService } from './services/gameService';
+import type { GameSession } from './services/gameService';
 
 function App() {
   const [mode, setMode] = useState<'MENU' | 'LOBBY' | 'RACING' | 'FINISHED'>('MENU');
