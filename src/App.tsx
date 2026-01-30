@@ -21,7 +21,7 @@ interface GameState {
 // --- Constants ---
 // --- Constants ---
 const WIN_SCORE = 100;
-const VERSION = "v0.3.4 (Input Fixes)";
+const VERSION = "v0.3.5 (Polish)";
 
 // Debug Logger Helper
 const useLogger = () => {
