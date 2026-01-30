@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import type { UserProfile } from '../services/userService';
-import { gameService, GameSession } from '../services/gameService';
+import { gameService } from '../services/gameService';
+import type { GameSession } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import { userService } from '../services/userService';
 
