@@ -22,7 +22,7 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ user, onCreateGame, stat
                 {/* Title */}
                 <div className="text-center transform -rotate-2">
                     <h1 className="text-7xl font-black text-black leading-none drop-shadow-[4px_4px_0px_rgba(255,255,255,1)]">
-                        RAGE<br />FLIGHT
+                        PUKA<br />BOY
                     </h1>
                 </div>
 
