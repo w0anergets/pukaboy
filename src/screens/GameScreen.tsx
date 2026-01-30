@@ -138,6 +138,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
         });
     };
 
+    // Helper to get consistent sticker for user based on ID
+    const getStickerStyle = (id: number, type: 'body' | 'engine') => {
+        // Simple hash to pick 1 of 4 quadrants
+        const index = id % 4;
+        // 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
+        const x = (index % 2) * 100;
+        const y = Math.floor(index / 2) * 100;
+
+        return {
+            backgroundImage: `url(${type === 'body' ? spritesBodies : spritesEngines})`,
+            backgroundPosition: `${x}% ${y}%`, // Approximate for 2x2 grid
+            backgroundSize: '200% 200%',
+            width: '100%',
+            height: '100%'
+        };
+    };
+
     // Render Helpers
     const getProgress = (s: number) => Math.min((s / WIN_SCORE) * 100, 100);
 
@@ -174,15 +191,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     {/* PLAYER 1 (ME) - LEFT */}
                     <div className="w-1/2 relative h-full">
                         <div
-                            className="absolute left-1/2 -translate-x-1/2 w-20 transition-all duration-100 ease-linear flex flex-col items-center"
-                            style={{ bottom: `${getProgress(myScore)}%`, marginBottom: '-40px' }}
+                            className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-100 ease-linear flex flex-col items-center"
+                            style={{ bottom: `${getProgress(myScore)}%`, marginBottom: '-60px' }}
                         >
-                            {/* Avatar */}
-                            <div className="relative">
-                                {/* Flame */}
-                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-4xl animate-pulse delay-75">🔥</div>
-                                <div className="w-16 h-16 rounded-full bg-white border-2 border-black overflow-hidden relative z-10">
-                                    <img src={user.photo_url || `https://ui-avatars.com/api/?name=${user.first_name}`} className="w-full h-full object-cover" />
+                            <div className="relative w-32 h-32">
+                                {/* Engine (Behind) */}
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
+                                    <div style={getStickerStyle(user.id, 'engine')} />
+                                </div>
+
+                                {/* Body (Middle) */}
+                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
+                                    <div style={getStickerStyle(user.id, 'body')} />
+                                </div>
+
+                                {/* Head (Top) */}
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
+                                    <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name}`} className="w-full h-full object-cover" />
                                 </div>
                             </div>
                         </div>
@@ -196,16 +221,23 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     {/* PLAYER 2 (OPPONENT) - RIGHT */}
                     <div className="w-1/2 relative h-full">
                         <div
-                            className="absolute left-1/2 -translate-x-1/2 w-20 transition-all duration-100 ease-linear flex flex-col items-center"
-                            style={{ bottom: `${getProgress(oppScore)}%`, marginBottom: '-40px' }}
+                            className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-100 ease-linear flex flex-col items-center"
+                            style={{ bottom: `${getProgress(oppScore)}%`, marginBottom: '-60px' }}
                         >
-                            {/* Avatar */}
-                            <div className="relative">
-                                {/* Flame */}
-                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-4xl animate-pulse">💨</div>
-                                <div className="w-16 h-16 rounded-full bg-white border-2 border-black overflow-hidden relative z-10">
-                                    {/* Simple opponent placeholder if no image */}
-                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center font-bold text-black border-2 border-black">OPP</div>
+                            <div className="relative w-32 h-32">
+                                {/* Engine */}
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
+                                    <div style={getStickerStyle(session.guest_id || 999, 'engine')} />
+                                </div>
+
+                                {/* Body */}
+                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
+                                    <div style={getStickerStyle(session.guest_id || 999, 'body')} />
+                                </div>
+
+                                {/* Head */}
+                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
+                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center font-bold text-black text-xs">OPP</div>
                                 </div>
                             </div>
                         </div>
