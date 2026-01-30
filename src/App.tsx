@@ -40,7 +40,13 @@ function App() {
     const tgUser = WebApp.initDataUnsafe.user;
     if (tgUser) {
       setStatus("Authenticating...");
-      userService.getOrCreateUser(tgUser).then(u => {
+      userService.getOrCreateUser({
+        id: tgUser.id,
+        username: tgUser.username,
+        first_name: tgUser.first_name,
+        last_name: tgUser.last_name,
+        photo_url: tgUser.photo_url
+      }).then(u => {
         if (u) {
           setUser(u);
           setStatus("Ready");
