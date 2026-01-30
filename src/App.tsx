@@ -21,7 +21,7 @@ interface GameState {
 // --- Constants ---
 // --- Constants ---
 const WIN_SCORE = 100;
-const VERSION = "v0.3.7 (Stability)";
+const VERSION = "v0.3.8 (Hotfix)";
 
 // Debug Logger Helper
 const useLogger = () => {
@@ -144,6 +144,16 @@ function App() {
     };
   }, [mode]);
 
+  // Refs for Stale Closure Prevention
+  const modeRef = useRef<AppMode>('MENU');
+  const gameRef = useRef<GameState>(game);
+  const dbUserRef = useRef<UserProfile | null>(null);
+
+  // Sync refs
+  useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { gameRef.current = game; }, [game]);
+  useEffect(() => { dbUserRef.current = dbUser; }, [dbUser]);
+
   // Fetch Opponent Profile when sessionData changes
   useEffect(() => {
     if (sessionData && dbUser) {
@@ -189,12 +199,17 @@ function App() {
   const handleSessionUpdate = (newSession: GameSession) => {
     setSessionData(newSession);
 
-    if (!dbUser) return;
-    const amIHost = newSession.host_id === dbUser.id;
+    const currentUser = dbUserRef.current;
+    if (!currentUser) return;
+    const amIHost = newSession.host_id === currentUser.id;
+
+    const currentMode = modeRef.current;
+    // const currentGame = gameRef.current; // Not strictly needed if we use functional updates, but good for checks
 
     // RESET DETECTED: If status is LOBBY, ensure local scores are 0
     if (newSession.status === 'LOBBY') {
-      if (game.myClicks > 0 || game.opponentClicks > 0 || mode === 'FINISHED') {
+      // We can use the ref to check strict condition, or just force reset if not matching
+      if (currentMode === 'FINISHED' || currentMode === 'RACING') {
         log("Resetting local state for new lobby/rematch");
         setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
         setMode('LOBBY');
@@ -220,7 +235,7 @@ function App() {
     }));
 
     // State Transitions
-    if (newSession.status === 'RACING' && mode !== 'RACING') {
+    if (newSession.status === 'RACING' && currentMode !== 'RACING') {
       log("RACING STARTED!");
       setMode('RACING');
       setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); // Hard reset on start to be sure
@@ -233,12 +248,12 @@ function App() {
     }
 
     // Only transition to FINISHED when server confirms it
-    if (newSession.status === 'FINISHED' && mode !== 'FINISHED') {
+    if (newSession.status === 'FINISHED' && currentMode !== 'FINISHED') {
       log("GAME FINISHED (Server Confirmed)!");
       const now = Date.now();
       const startTime = new Date(newSession.start_time!).getTime();
 
-      if (newSession.winner_id === dbUser.id) {
+      if (newSession.winner_id === currentUser.id) {
         setGame(prev => ({ ...prev, myTime: now - startTime, opponentTime: null }));
       } else {
         setGame(prev => ({ ...prev, myTime: null, opponentTime: now - startTime }));
