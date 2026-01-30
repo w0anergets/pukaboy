@@ -494,7 +494,7 @@ function App() {
             {/* CLICK AREA */}
             <div
               className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative active:bg-gray-700 transition-colors"
-              onPointerDown={(e) => {
+              onPointerDown={() => {
                 handleTap();
                 // Optional: Visual feedback on the whole container
               }}
