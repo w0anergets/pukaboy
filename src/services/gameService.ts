@@ -10,6 +10,7 @@ export interface GameSession {
     start_time: string | null;
     winner_id: number | null;
     created_at: string;
+    next_game_id?: string | null; // For rematch
 }
 
 export const gameService = {
@@ -108,5 +109,27 @@ export const gameService = {
                 winner_id: winnerId
             })
             .eq('id', gameId);
+    },
+
+    /**
+     * Create a Rematch (Host creates new game, links old game to it)
+     */
+    async createRematch(oldGameId: string, hostId: number): Promise<string | null> {
+        // 1. Create new game
+        const newGameId = await this.createGame(hostId);
+        if (!newGameId) return null;
+
+        // 2. Link old game to new game
+        const { error } = await supabase
+            .from('game_sessions')
+            .update({ next_game_id: newGameId })
+            .eq('id', oldGameId);
+
+        if (error) {
+            console.error("Error linking rematch:", error);
+            // Non-critical, but good to know
+        }
+
+        return newGameId;
     }
 };

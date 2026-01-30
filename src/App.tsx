@@ -21,7 +21,7 @@ interface GameState {
 // --- Constants ---
 // --- Constants ---
 const WIN_SCORE = 100;
-const VERSION = "v0.3.5 (Polish)";
+const VERSION = "v0.3.6 (Rematch & Avatars)";
 
 // Debug Logger Helper
 const useLogger = () => {
@@ -46,9 +46,9 @@ function App() {
   // Game Session State
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
-  // const [opponentName] = useState<string | null>(null);
 
-  // ...
+  // Opponent Data (for Avatars)
+  const [opponentProfile, setOpponentProfile] = useState<UserProfile | null>(null);
 
   // Local Game State (for smooth UI)
   const [game, setGame] = useState<GameState>({
@@ -136,6 +136,18 @@ function App() {
     };
   }, [mode]);
 
+  // Fetch Opponent Profile when sessionData changes
+  useEffect(() => {
+    if (sessionData && dbUser) {
+      const oppId = sessionData.host_id === dbUser.id ? sessionData.guest_id : sessionData.host_id;
+      if (oppId && (!opponentProfile || opponentProfile.id !== oppId)) {
+        userService.getOrCreateUser({ id: oppId, first_name: 'Opponent' } as any).then(p => {
+          setOpponentProfile(p);
+        });
+      }
+    }
+  }, [sessionData, dbUser]);
+
   // 2. Realtime Subscription
   useEffect(() => {
     if (!sessionId) return;
@@ -171,6 +183,13 @@ function App() {
 
     if (!dbUser) return;
     const amIHost = newSession.host_id === dbUser.id;
+
+    // Check for Rematch Link
+    if (newSession.next_game_id && mode === 'FINISHED') {
+      // Wait a bit then auto-redirect or show notification?
+      // Let's just update the button or auto-join if we are the guest?
+      // For now simpler: User will see "Join Rematch" button appear because we render based on sessionData
+    }
 
     // Update Scores
     const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
@@ -228,7 +247,8 @@ function App() {
         guest_score: 0,
         start_time: null,
         winner_id: null,
-        created_at: new Date().toISOString()
+        created_at: new Date().toISOString(),
+        next_game_id: null, // Added for rematch
       });
 
       // Generate Link
@@ -266,15 +286,8 @@ function App() {
     // 1. Check Mode
     if (mode !== 'RACING' || !sessionId || !dbUser) return;
 
-    // 2. Anti-Cheat / False Start Protection
-    // Re-calculate isCountingDown here to be safe inside the closure if needed, 
-    // or rely on current state. Since isCountingDown is derived from render state, 
-    // we should use the ref for precision or just the current variable.
-    // The `isCountingDown` variable in function scope is fresh on every render.
-    // However, if we are in a closure, we need to be careful.
-    // `handleTap` is recreated on every render so it captures fresh `isCountingDown`.
+    // 2. False Start Protection
     if (isCountingDown) {
-      // Optional: Maybe vibrate 'error' if they tap too early?
       return;
     }
 
@@ -306,6 +319,29 @@ function App() {
     }
   };
 
+  const handleRematch = async () => {
+    if (!sessionData || !dbUser) return;
+
+    const amIHost = sessionData.host_id === dbUser.id;
+
+    if (amIHost) {
+      // Host Creates new game
+      setStatus("Creating Rematch...");
+      const newGameId = await gameService.createRematch(sessionData.id, dbUser.id);
+      if (newGameId) {
+        joinSession(newGameId, dbUser.id); // Auto-join self
+      }
+    } else {
+      // Guest Joins (if link exists)
+      if (sessionData.next_game_id) {
+        joinSession(sessionData.next_game_id, dbUser.id);
+      } else {
+        // Should not happen if button logic is correct
+        log("Waiting for host to create rematch...");
+      }
+    }
+  };
+
   // Timer Effect
   useEffect(() => {
     let animId: number;
@@ -334,6 +370,8 @@ function App() {
   // Helper to get formatted progress
   const getProgress = (c: number) => Math.min((c / WIN_SCORE) * 100, 100);
   const amIHost = sessionData?.host_id === dbUser?.id;
+  const myAvatar = dbUser?.avatar_url;
+  const oppAvatar = opponentProfile?.avatar_url;
 
   return (
     <>
@@ -385,22 +423,24 @@ function App() {
         }
 
         if (mode === 'LOBBY') {
-          // LOBBY CONTENT UNCHANGED
+          // LOBBY with Avatars
           return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
               <h2 className="text-xl font-bold mb-8 text-gray-400 tracking-widest">ОЖИДАНИЕ СОПЕРНИКА</h2>
 
               <div className="flex gap-4 items-center mb-12 w-full justify-center">
                 <div className="flex flex-col items-center">
-                  <div className="w-20 h-20 bg-blue-600 rounded-full flex items-center justify-center text-3xl mb-2 shadow-[0_0_15px_rgba(37,99,235,0.6)] border-4 border-gray-800">😎</div>
+                  <div className="w-24 h-24 rounded-full flex items-center justify-center mb-2 shadow-[0_0_15px_rgba(37,99,235,0.6)] border-4 border-gray-800 bg-gray-800 overflow-hidden">
+                    {myAvatar ? <img src={myAvatar} className="w-full h-full object-cover" /> : <span className="text-3xl">😎</span>}
+                  </div>
                   <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">YOU</div>
                 </div>
                 <div className="text-2xl font-black text-gray-600 italic">VS</div>
                 <div className="flex flex-col items-center">
-                  <div className={`w-20 h-20 ${sessionData?.guest_id ? 'bg-red-600 shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-gray-800 border-dashed border-2 border-gray-600'} rounded-full flex items-center justify-center text-3xl mb-2 border-4 border-gray-900 transition-all`}>
-                    {sessionData?.guest_id ? '😈' : '...'}
+                  <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-2 border-4 border-gray-900 transition-all overflow-hidden ${sessionData?.guest_id ? 'shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'bg-gray-800 border-dashed border-gray-600'}`}>
+                    {sessionData?.guest_id ? (oppAvatar ? <img src={oppAvatar} className="w-full h-full object-cover" /> : <span className="text-3xl">😈</span>) : <span className="text-gray-500">...</span>}
                   </div>
-                  <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">{sessionData?.guest_id ? 'Opponent' : 'Ждем...'}</div>
+                  <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full">{sessionData?.guest_id ? (opponentProfile?.full_name?.split(' ')[0] || 'Opponent') : 'Ждем...'}</div>
                 </div>
               </div>
 
@@ -459,13 +499,17 @@ function App() {
             <div className="flex-1 flex relative">
               <div className="flex-1 border-r border-gray-800 relative bg-blue-900/5">
                 <div className="absolute inset-x-0 bottom-0 bg-blue-600/30 transition-all duration-75 ease-out" style={{ height: `${getProgress(game.myClicks)}%` }}></div>
-                <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-out pb-4" style={{ bottom: `${getProgress(game.myClicks)}%` }}>🚀</div>
+                <div className="absolute left-1/2 transform -translate-x-1/2 transition-all duration-75 ease-out pb-4 w-16 h-16" style={{ bottom: `${getProgress(game.myClicks)}%` }}>
+                  {myAvatar ? <img src={myAvatar} className="w-full h-full rounded-full border-2 border-blue-400 object-cover shadow-lg" /> : <div className="text-5xl">🚀</div>}
+                </div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-blue-500 text-xs tracking-wider bg-blue-900/20 px-2 rounded">YOU</div>
               </div>
 
               <div className="flex-1 relative bg-red-900/5">
                 <div className="absolute inset-x-0 bottom-0 bg-red-600/30 transition-all duration-75 ease-linear" style={{ height: `${getProgress(game.opponentClicks)}%` }}></div>
-                <div className="absolute left-1/2 transform -translate-x-1/2 text-5xl transition-all duration-75 ease-linear pb-4" style={{ bottom: `${getProgress(game.opponentClicks)}%` }}>😈</div>
+                <div className="absolute left-1/2 transform -translate-x-1/2 transition-all duration-75 ease-linear pb-4 w-16 h-16" style={{ bottom: `${getProgress(game.opponentClicks)}%` }}>
+                  {oppAvatar ? <img src={oppAvatar} className="w-full h-full rounded-full border-2 border-red-400 object-cover shadow-lg" /> : <div className="text-5xl">😈</div>}
+                </div>
                 <div className="absolute top-2 left-1/2 -translate-x-1/2 font-bold text-red-500 text-xs tracking-wider bg-red-900/20 px-2 rounded">OPP</div>
               </div>
 
@@ -486,7 +530,21 @@ function App() {
                   <h2 className={`text-4xl font-black italic mb-8 ${sessionData?.winner_id === dbUser?.id ? 'text-yellow-400' : 'text-gray-400'}`}>
                     {sessionData?.winner_id === dbUser?.id ? 'ТЫ ПОБЕДИЛ!' : 'ПРОИГРАЛ'}
                   </h2>
-                  <button onClick={() => { setMode('MENU'); setSessionId(null); setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); }} className="bg-white text-black font-bold py-3 px-8 rounded-full hover:bg-gray-200 transition-colors">В МЕНЮ</button>
+
+                  {/* Rematch Button Logic */}
+                  <div className="flex flex-col gap-4">
+                    {(amIHost || sessionData?.next_game_id) && (
+                      <button
+                        onClick={handleRematch}
+                        className="bg-gradient-to-r from-orange-500 to-red-600 text-white font-black py-4 px-10 rounded-full hover:from-orange-400 hover:to-red-500 transition-all active:scale-95 shadow-lg animate-pulse"
+                      >
+                        {sessionData?.next_game_id ? 'JOIN REMATCH ⚔️' : (amIHost ? 'РЕВАНШ? 🔄' : 'Ждем реванш...')}
+                      </button>
+                    )}
+
+                    <button onClick={() => { setMode('MENU'); setSessionId(null); setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); }} className="text-gray-400 font-bold py-2 hover:text-white transition-colors">В МЕНЮ</button>
+                  </div>
+
                 </div>
               )}
             </div>

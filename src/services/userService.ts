@@ -6,13 +6,14 @@ export interface UserProfile {
     full_name: string | null;
     puka_coins: number;
     is_premium: boolean;
+    avatar_url?: string | null; // Added
 }
 
 export const userService = {
     /**
      * Get user profile or create if not exists
      */
-    async getOrCreateUser(telegramUser: { id: number; username?: string; first_name: string; last_name?: string }): Promise<UserProfile | null> {
+    async getOrCreateUser(telegramUser: { id: number; username?: string; first_name: string; last_name?: string; photo_url?: string }): Promise<UserProfile | null> {
         // Try to get existing first
         const { data: existingUser, error: fetchError } = await supabase
             .from('profiles')
@@ -26,6 +27,11 @@ export const userService = {
         }
 
         if (existingUser) {
+            // Update avatar if changed
+            if (telegramUser.photo_url && existingUser.avatar_url !== telegramUser.photo_url) {
+                await supabase.from('profiles').update({ avatar_url: telegramUser.photo_url }).eq('id', telegramUser.id);
+                return { ...existingUser, avatar_url: telegramUser.photo_url };
+            }
             return existingUser;
         }
 
@@ -35,7 +41,8 @@ export const userService = {
             username: telegramUser.username || null,
             full_name: `${telegramUser.first_name} ${telegramUser.last_name || ''}`.trim(),
             puka_coins: 0, // No freebie for V2
-            is_premium: false
+            is_premium: false,
+            avatar_url: telegramUser.photo_url || null
         };
 
         const { data: createdUser, error: insertError } = await supabase
