@@ -84,7 +84,7 @@ function App() {
                 username: 'DebugUser',
                 first_name: 'Debug',
                 last_name: 'Mode',
-                photo_url: null
+                photo_url: undefined
               };
               userService.getOrCreateUser(debugUser).then(u => {
                 setUser(u);
