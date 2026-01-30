@@ -12,6 +12,11 @@ interface ResultScreenProps {
 }
 
 export const ResultScreen: React.FC<ResultScreenProps> = ({ session: initialSession, user, onRematch, onMenu }) => {
+    // Guard: If session is null (shouldn't happen), return safe fallback
+    if (!initialSession || !user) {
+        return <div className="p-10 text-center" onClick={onMenu}>Error: No Result Data. Tap to Menu.</div>;
+    }
+
     const [session, setSession] = useState<GameSession>(initialSession);
     const [status, setStatus] = useState("");
 

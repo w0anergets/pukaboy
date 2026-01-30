@@ -76,6 +76,8 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
 
 
     // 3. Realtime Subscription
+    const isFinishedRef = useRef(false);
+
     useEffect(() => {
         const channel = supabase
             .channel(`game_${sessionId}`)
@@ -97,7 +99,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     }
 
                     // Check Finish
-                    if (newSess.status === 'FINISHED') {
+                    if (newSess.status === 'FINISHED' && !isFinishedRef.current) {
+                        isFinishedRef.current = true;
+                        // Small delay to ensure last click sound plays?
                         onFinish(newSess);
                     }
                 }
