@@ -143,51 +143,111 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
 
     return (
         <div
-            className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden select-none"
-            style={{ touchAction: 'none' }} // Force disable browser gestures
+            className="flex flex-col h-screen bg-black overflow-hidden select-none relative"
+            style={{ touchAction: 'none' }}
         >
-            {/* Header */}
-            <div className="h-24 bg-gray-800 flex items-center justify-center border-b border-gray-700 bg-opacity-80 backdrop-blur-md z-10">
-                <div className={`font-mono text-5xl font-bold tracking-tighter ${countdown ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>
-                    {countdown ? countdown : timer}
+            {/* Split Background */}
+            <div className="absolute inset-0 flex">
+                <div className="w-1/2 bg-[#DFFF00] border-r-4 border-black box-border relative">
+                    {/* Checkered Pattern Strip (Left) */}
+                    <div className="absolute right-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
+                </div>
+                <div className="w-1/2 bg-[#FF00FF] border-l-4 border-black box-border relative">
+                    {/* Checkered Pattern Strip (Right) */}
+                    <div className="absolute left-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
                 </div>
             </div>
 
-            {/* Track */}
-            <div className="flex-1 flex relative">
-                {/* Me */}
-                <div className="flex-1 border-r border-gray-800 relative bg-blue-900/10">
-                    <div className="absolute inset-x-0 bottom-0 bg-blue-600/50 transition-all duration-75 ease-out" style={{ height: `${getProgress(myScore)}%` }} />
-                    <div className="absolute left-1/2 -translate-x-1/2 transition-all duration-75 pb-2" style={{ bottom: `${getProgress(myScore)}%` }}>
-                        <span className="text-4xl">🚀</span>
+            {/* Elements Layer */}
+            <div className="relative z-10 flex flex-col h-full pointer-events-none">
+
+                {/* MOON (Goal) */}
+                <div className="h-32 flex justify-center items-start pt-4">
+                    <div className="w-24 h-24 rounded-full bg-gray-300 border-4 border-black flex items-center justify-center shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-20">
+                        <span className="font-black text-xl text-black">MOON</span>
                     </div>
                 </div>
 
-                {/* Opponent */}
-                <div className="flex-1 relative bg-red-900/10">
-                    <div className="absolute inset-x-0 bottom-0 bg-red-600/50 transition-all duration-75 ease-linear" style={{ height: `${getProgress(oppScore)}%` }} />
-                    <div className="absolute left-1/2 -translate-x-1/2 transition-all duration-75 pb-2" style={{ bottom: `${getProgress(oppScore)}%` }}>
-                        <span className="text-4xl">😈</span>
+                {/* TRACKS */}
+                <div className="flex-1 flex w-full relative">
+
+                    {/* PLAYER 1 (ME) - LEFT */}
+                    <div className="w-1/2 relative h-full">
+                        <div
+                            className="absolute left-1/2 -translate-x-1/2 w-20 transition-all duration-100 ease-linear flex flex-col items-center"
+                            style={{ bottom: `${getProgress(myScore)}%`, marginBottom: '-40px' }}
+                        >
+                            {/* Avatar */}
+                            <div className="relative">
+                                {/* Flame */}
+                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-4xl animate-pulse delay-75">🔥</div>
+                                <div className="w-16 h-16 rounded-full bg-white border-2 border-black overflow-hidden relative z-10">
+                                    <img src={user.photo_url || `https://ui-avatars.com/api/?name=${user.first_name}`} className="w-full h-full object-cover" />
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Rage Meter (Visual Bar on side) */}
+                        <div className="absolute left-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
+                            <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(myScore)}%` }} />
+                        </div>
                     </div>
+
+                    {/* PLAYER 2 (OPPONENT) - RIGHT */}
+                    <div className="w-1/2 relative h-full">
+                        <div
+                            className="absolute left-1/2 -translate-x-1/2 w-20 transition-all duration-100 ease-linear flex flex-col items-center"
+                            style={{ bottom: `${getProgress(oppScore)}%`, marginBottom: '-40px' }}
+                        >
+                            {/* Avatar */}
+                            <div className="relative">
+                                {/* Flame */}
+                                <div className="absolute -bottom-8 left-1/2 -translate-x-1/2 text-4xl animate-pulse">💨</div>
+                                <div className="w-16 h-16 rounded-full bg-white border-2 border-black overflow-hidden relative z-10">
+                                    {/* Simple opponent placeholder if no image */}
+                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center font-bold text-black border-2 border-black">OPP</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Rage Meter (Visual Bar on side) */}
+                        <div className="absolute right-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
+                            <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(oppScore)}%` }} />
+                        </div>
+                    </div>
+
                 </div>
 
-                {/* Tap Zone Overlay */}
-                <div
-                    className="absolute inset-0 z-20 flex items-end justify-center pb-20 active:bg-white/5 transition-colors"
-                    onPointerDown={handleTap}
-                >
-                    <div className="w-64 h-64 rounded-full border-4 border-white/10 flex items-center justify-center pointer-events-none">
-                        <span className="text-2xl font-black text-white/20 select-none">
-                            {countdown ? 'WAIT' : 'TAP HERE'}
-                        </span>
+                {/* EARTH (Start) */}
+                <div className="h-24 flex items-end justify-center pb-4 z-20">
+                    <div className="bg-[#4CAF50] border-4 border-black px-12 py-2 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
+                        <span className="font-black text-3xl text-black">EARTH</span>
                     </div>
                 </div>
             </div>
 
-            {/* Stats */}
-            <div className="h-16 flex items-center justify-between px-8 bg-gray-900 border-t border-gray-800">
-                <div className="text-blue-400 font-bold font-mono">{myScore}/100</div>
-                <div className="text-red-400 font-bold font-mono">{oppScore}/100</div>
+            {/* Tap Zone (Invisible Top Layer) */}
+            <div
+                className="absolute inset-0 z-30"
+                onPointerDown={handleTap}
+            >
+                {/* Initial Countdown Overlay */}
+                {countdown !== null && (
+                    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-40 backdrop-blur-sm">
+                        <div className="text-9xl font-black text-yellow-400 animate-ping">
+                            {countdown}
+                        </div>
+                    </div>
+                )}
+
+                {/* Tap Burst FX (Optional - Could use a library later) */}
+            </div>
+
+            {/* Timer Overlay (Top Center) */}
+            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40">
+                <div className="bg-black text-yellow-400 font-mono text-xl px-4 py-1 rounded border-2 border-white">
+                    {timer}s
+                </div>
             </div>
         </div>
     );
