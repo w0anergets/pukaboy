@@ -19,8 +19,9 @@ interface GameState {
 }
 
 // --- Constants ---
+// --- Constants ---
 const WIN_SCORE = 100;
-const VERSION = "v0.3.3 (Width Fix & 100 Taps)";
+const VERSION = "v0.3.4 (Input Fixes)";
 
 // Debug Logger Helper
 const useLogger = () => {
@@ -59,9 +60,14 @@ function App() {
   const [timer, setTimer] = useState("0.00");
   const subscriptionRef = useRef<any>(null);
 
+  // Computed state for hooks
+  const timeToStart = (startTimeRef.current || 0) - Date.now();
+  const isCountingDown = mode === 'RACING' && timeToStart > 0;
+
   // 1. Initialize & Auth
   useEffect(() => {
     WebApp.expand();
+    WebApp.enableClosingConfirmation(); // Prevent accidental swipes closing app
     // @ts-ignore
     const user = WebApp.initDataUnsafe.user;
 
@@ -105,14 +111,28 @@ function App() {
       });
     } else {
       setStatus("Ошибка: Запустите из Telegram");
-      // DEV MODE (Mock User - Uncomment for local dev)
-      // setDbUser({ id: 123, username: 'dev', full_name: 'Dev Player', puka_coins: 999, is_premium: false });
     }
 
     return () => {
       if (subscriptionRef.current) subscriptionRef.current.unsubscribe();
     };
   }, []);
+
+  // Prevent Scrolling/Gestures on Body during Game
+  useEffect(() => {
+    const preventDefault = (e: Event) => e.preventDefault();
+    if (mode === 'RACING') {
+      document.body.style.overflow = 'hidden';
+      document.body.addEventListener('touchmove', preventDefault, { passive: false });
+    } else {
+      document.body.style.overflow = '';
+      document.body.removeEventListener('touchmove', preventDefault);
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.removeEventListener('touchmove', preventDefault);
+    };
+  }, [mode]);
 
   // 2. Realtime Subscription
   useEffect(() => {
@@ -151,14 +171,11 @@ function App() {
     const amIHost = newSession.host_id === dbUser.id;
 
     // Update Scores
-    // CRITICAL FIX: Only update opponent score from server to avoid local rollback jitter.
-    // We trust our own local clicks for UI, but send them to server for verification.
     const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
     const serverOppScore = amIHost ? newSession.guest_score : newSession.host_score;
 
     setGame(prev => ({
       ...prev,
-      // If server somehow sees more clicks than me (e.g. cross-device?), take server. Otherwise keep local.
       myClicks: Math.max(prev.myClicks, serverMyScore),
       opponentClicks: serverOppScore
     }));
@@ -169,7 +186,7 @@ function App() {
       setMode('RACING');
       const startT = new Date(newSession.start_time!).getTime();
       startTimeRef.current = startT;
-      // Vibrate only when actual start happens (handled in timer loop or just simple timeout)
+      // Vibrate only when actual start happens
       setTimeout(() => {
         WebApp.HapticFeedback.notificationOccurred('success');
       }, Math.max(0, startT - Date.now()));
@@ -187,11 +204,6 @@ function App() {
         setGame(prev => ({ ...prev, myTime: null, opponentTime: now - startTime }));
       }
       setMode('FINISHED');
-    }
-
-    // Update Lobby Status
-    if (newSession.status === 'LOBBY' && newSession.guest_id && !opponentName) {
-      // We could fetch opponent name here
     }
   };
 
@@ -234,7 +246,6 @@ function App() {
     if (success) {
       setSessionId(sessId);
       setMode('LOBBY');
-      // Fetch initial state
       const initial = await gameService.getGame(sessId);
       if (initial) {
         setSessionData(initial);
@@ -250,7 +261,20 @@ function App() {
   };
 
   const handleTap = async () => {
+    // 1. Check Mode
     if (mode !== 'RACING' || !sessionId || !dbUser) return;
+
+    // 2. Anti-Cheat / False Start Protection
+    // Re-calculate isCountingDown here to be safe inside the closure if needed, 
+    // or rely on current state. Since isCountingDown is derived from render state, 
+    // we should use the ref for precision or just the current variable.
+    // The `isCountingDown` variable in function scope is fresh on every render.
+    // However, if we are in a closure, we need to be careful.
+    // `handleTap` is recreated on every render so it captures fresh `isCountingDown`.
+    if (isCountingDown) {
+      // Optional: Maybe vibrate 'error' if they tap too early?
+      return;
+    }
 
     // Optimistic UI update
     const newClicks = game.myClicks + 1;
@@ -262,9 +286,6 @@ function App() {
     // Send to DB
     await gameService.click(sessionId, dbUser.id);
 
-    // Check for finish
-    // We just SEND the finish signal, but we don't change local mode until handleSessionUpdate sees it.
-    // This prevents "I won locally but server didn't register it yet" desync.
     if (newClicks >= WIN_SCORE) {
       log("Reached Goal! Sending finish...");
       await gameService.finishGame(sessionId, dbUser.id);
@@ -310,10 +331,7 @@ function App() {
 
   // Helper to get formatted progress
   const getProgress = (c: number) => Math.min((c / WIN_SCORE) * 100, 100);
-
   const amIHost = sessionData?.host_id === dbUser?.id;
-  const timeToStart = (startTimeRef.current || 0) - Date.now();
-  const isCountingDown = mode === 'RACING' && timeToStart > 0;
 
   return (
     <>
@@ -330,6 +348,7 @@ function App() {
         if (mode === 'MENU') {
           return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4 relative overflow-hidden">
+              {/* MENU CONTENT UNCHANGED */}
               <div className="absolute top-4 right-4 flex items-center gap-2 bg-gray-800/80 rounded-full px-4 py-2 border border-yellow-500/30">
                 <span className="text-xl">🍌</span>
                 <span className="font-mono font-bold text-yellow-400">{dbUser?.puka_coins ?? '...'}</span>
@@ -364,6 +383,7 @@ function App() {
         }
 
         if (mode === 'LOBBY') {
+          // LOBBY CONTENT UNCHANGED
           return (
             <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-4">
               <h2 className="text-xl font-bold mb-8 text-gray-400 tracking-widest">ОЖИДАНИЕ СОПЕРНИКА</h2>
@@ -423,8 +443,9 @@ function App() {
         }
 
         return (
-          <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-manipulation select-none">
-            {/* ... REUSE EXISTING GAME RENDER, BUT WITH NEW STATE ... */}
+          // Added touch-none to prevent browser gestures
+          <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-none select-none">
+            {/* Header / Scoreboard */}
             <div className={`h-20 flex flex-col items-center justify-center border-b border-gray-700 z-10 transition-colors ${mode === 'FINISHED' ? 'bg-gray-800' : 'bg-gray-800/80 backdrop-blur-sm'}`}>
               <span className={`font-mono text-4xl font-bold tracking-tighter ${mode === 'FINISHED' ? 'text-gray-500' : 'text-yellow-400'} ${isCountingDown ? 'text-red-500 scale-150 animate-pulse' : ''}`}>
                 {mode === 'FINISHED' && game.myTime ? ((game.myTime / 1000).toFixed(2)) : (isCountingDown ? Math.ceil(timeToStart / 1000) : timer)}
@@ -432,6 +453,7 @@ function App() {
               {isCountingDown && <span className="text-xs font-bold text-red-500 tracking-widest uppercase">Get Ready</span>}
             </div>
 
+            {/* Race Track */}
             <div className="flex-1 flex relative">
               <div className="flex-1 border-r border-gray-800 relative bg-blue-900/5">
                 <div className="absolute inset-x-0 bottom-0 bg-blue-600/30 transition-all duration-75 ease-out" style={{ height: `${getProgress(game.myClicks)}%` }}></div>
@@ -467,18 +489,24 @@ function App() {
               )}
             </div>
 
-            <div className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative">
+            {/* CLICK AREA */}
+            <div
+              className="h-[35vh] bg-gray-800 p-8 flex justify-center items-center rounded-t-[3rem] shadow-[0_-10px_40px_rgba(0,0,0,0.5)] z-20 relative active:bg-gray-700 transition-colors"
+              onPointerDown={(e) => {
+                handleTap();
+                // Optional: Visual feedback on the whole container
+              }}
+            >
               <div className="absolute top-3 w-16 h-1 bg-gray-600/30 rounded-full"></div>
-              <button
-                onPointerDown={handleTap}
-                disabled={mode !== 'RACING' || isCountingDown}
-                className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4
-                    ${(mode !== 'RACING' || isCountingDown) ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] active:shadow-none active:translate-y-[10px] active:scale-95'}
+              {/* Button is now just a visual indicator, clicks are handled by container */}
+              <div
+                className={`w-48 h-48 rounded-full flex flex-col items-center justify-center transition-all duration-75 border-4 pointer-events-none
+                    ${(mode !== 'RACING' || isCountingDown) ? 'bg-gray-700 border-gray-600 opacity-50 grayscale' : 'bg-gradient-to-b from-blue-500 to-blue-700 border-blue-400/30 shadow-[0_10px_0_rgb(30,58,138)] transform scale-105'}
                  `}
               >
                 <span className="text-4xl font-black text-white drop-shadow-md select-none">{isCountingDown ? 'WAIT' : 'TAP!'}</span>
                 <span className="text-xs font-mono text-blue-200 mt-1">{game.myClicks}/{WIN_SCORE}</span>
-              </button>
+              </div>
             </div>
           </div>
         );
@@ -486,5 +514,4 @@ function App() {
     </>
   );
 }
-
 export default App
