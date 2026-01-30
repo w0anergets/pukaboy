@@ -42,29 +42,26 @@ export const MenuScreen: React.FC<MenuScreenProps> = ({ user, onCreateGame, stat
                 {/* Main Action */}
                 <button
                     onClick={onCreateGame}
-                    <div className="absolute inset-0 bg-white/20 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 pointer-events-none transform skew-x-12" />
-                <div className="flex items-center justify-center gap-2">
-                    <span className="text-2xl group-hover:rotate-12 transition-transform">⚔️</span>
-                    <span>CREATE DUEL</span>
+                    disabled={status !== 'Ready'}
+                    className="w-full max-w-xs bg-white border-4 border-black rounded-2xl py-6 relative active:scale-95 transition-transform group shadow-[8px_8px_0px_0px_rgba(0,0,0,1)]"
+                >
+                    <span className="text-4xl font-black text-black uppercase tracking-tighter">
+                        START RAGE
+                    </span>
+                    {/* Decorative Stars */}
+                    <div className="absolute -top-4 -right-4 text-4xl animate-bounce">💥</div>
+                </button>
+
+                {/* Shop / Secondary */}
+                <button className="w-full max-w-xs bg-black border-4 border-white rounded-2xl py-4 active:scale-95 transition-transform shadow-[4px_4px_0px_0px_rgba(255,255,255,0.5)]">
+                    <span className="text-2xl font-bold text-white uppercase">SHOP</span>
+                </button>
+
+                {/* Status Footer */}
+                <div className="absolute bottom-6 font-mono font-bold text-xs bg-black text-white px-2 py-1">
+                    STATUS: {status}
                 </div>
-            </button>
-
-            <button
-                className="w-full bg-gray-800/80 hover:bg-gray-700/80 text-yellow-500 font-bold py-4 rounded-xl border border-yellow-500/10 backdrop-blur-sm transition-all active:scale-95 flex items-center justify-center gap-2"
-            >
-                <span className="text-xl">🛒</span>
-                <span>SHOP</span>
-            </button>
-
-            {/* Status Line */}
-            <div className="h-6 flex items-center justify-center">
-                {status && (
-                    <div className="text-xs font-mono text-cyan-400 animate-pulse">
-                        [{status.toUpperCase()}]
-                    </div>
-                )}
             </div>
         </div>
-        </div >
     );
 };

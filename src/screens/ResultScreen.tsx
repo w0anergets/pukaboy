@@ -12,7 +12,6 @@ interface ResultScreenProps {
 }
 
 export const ResultScreen: React.FC<ResultScreenProps> = ({ session: initialSession, user, onRematch, onMenu }) => {
-    // Guard: If session is null (shouldn't happen), return safe fallback
     if (!initialSession || !user) {
         return <div className="p-10 text-center" onClick={onMenu}>Error: No Result Data. Tap to Menu.</div>;
     }
@@ -23,7 +22,6 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({ session: initialSess
     const amIWinner = session.winner_id === user.id;
     const amIHost = session.host_id === user.id;
 
-    // Realtime Check for Rematch Link
     useEffect(() => {
         const channel = supabase
             .channel(`result_${session.id}`)
@@ -33,11 +31,7 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({ session: initialSess
                 (payload) => {
                     const updated = payload.new as GameSession;
                     setSession(updated);
-
-                    if (updated.next_game_id) {
-                        // Auto-redirect guest if desired, or just show button
-                        setStatus("Host created a rematch!");
-                    }
+                    if (updated.next_game_id) setStatus("Rematch Ready!");
                 }
             )
             .subscribe();
@@ -47,61 +41,63 @@ export const ResultScreen: React.FC<ResultScreenProps> = ({ session: initialSess
 
     const handleRematchClick = async () => {
         if (amIHost) {
-            setStatus("Creating Rematch...");
+            setStatus("Creating...");
             const newId = await gameService.createRematch(session.id, user.id);
-            if (newId) {
-                onRematch(newId);
-            } else {
-                setStatus("Error creating rematch");
-            }
+            if (newId) onRematch(newId);
         } else {
             if (session.next_game_id) {
                 onRematch(session.next_game_id);
             } else {
-                setStatus("Waiting for host...");
+                setStatus("Wait for Host...");
             }
         }
     };
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6 relative overflow-hidden">
-            {/* Background FX */}
-            <div className={`absolute inset-0 opacity-20 ${amIWinner ? 'bg-yellow-500' : 'bg-red-900'} z-0`} />
+        <div className="flex flex-col h-screen bg-black overflow-hidden relative font-sans">
+            {/* Split Background */}
+            <div className="absolute inset-0 flex opacity-50">
+                <div className="w-1/2 bg-[#DFFF00]" />
+                <div className="w-1/2 bg-[#FF00FF]" />
+            </div>
 
-            <div className="z-10 flex flex-col items-center text-center">
-                <div className="text-9xl mb-4 animate-bounce filter drop-shadow-lg">
-                    {amIWinner ? '🏆' : '💀'}
+            <div className="relative z-10 flex flex-col items-center justify-center h-full p-6 space-y-6">
+
+                {/* Result Title */}
+                <div className="bg-white border-4 border-black px-8 py-4 transform -rotate-3 shadow-[8px_8px_0px_0px_black] mb-8">
+                    <h1 className="text-6xl font-black text-black uppercase tracking-tighter">
+                        {amIWinner ? "VICTORY" : "DEFEAT"}
+                    </h1>
                 </div>
 
-                <h1 className={`text-5xl font-black italic uppercase mb-2 ${amIWinner ? 'text-transparent bg-clip-text bg-gradient-to-r from-yellow-300 to-orange-500' : 'text-gray-500'}`}>
-                    {amIWinner ? 'VICTORY' : 'DEFEAT'}
-                </h1>
-
-                <div className="text-xs font-mono text-gray-400 mb-12">
-                    {amIWinner ? '+10 PukaCoins Received' : 'Better luck next time'}
+                {/* Score / Stats */}
+                <div className="bg-black border-4 border-white p-4 rounded-xl text-center transform rotate-2">
+                    <div className="text-white font-mono text-xl">
+                        {amIWinner ? "YOU SMASHED IT!" : "YOU GOT CRUSHED!"}
+                    </div>
                 </div>
 
-                <div className="w-full max-w-xs space-y-4">
-                    {(amIHost || session.next_game_id) ? (
-                        <button
-                            onClick={handleRematchClick}
-                            className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-black text-xl py-5 rounded-2xl shadow-xl transition-all active:scale-95 animate-pulse"
-                        >
-                            {amIHost ? 'REMATCH ⚔️' : (session.next_game_id ? 'JOIN REMATCH 🚀' : 'Waiting for Host...')}
-                        </button>
-                    ) : (
-                        <div className="text-gray-500 text-sm animate-pulse">Waiting for host to decide...</div>
-                    )}
+                <div className="h-12" />
 
-                    <button
-                        onClick={onMenu}
-                        className="w-full py-4 text-gray-500 font-bold hover:text-white transition-colors"
-                    >
-                        BACK TO MENU
-                    </button>
-                </div>
+                {/* Actions */}
+                <button
+                    onClick={handleRematchClick}
+                    className="w-full max-w-xs bg-gradient-to-r from-blue-500 to-purple-500 border-4 border-black rounded-2xl py-6 relative active:scale-95 transition-transform shadow-[8px_8px_0px_0px_white]"
+                >
+                    <span className="text-3xl font-black text-white uppercase italic">
+                        {amIHost ? "REMATCH" : (session.next_game_id ? "JOIN REMATCH" : "WAIT FOR HOST")}
+                    </span>
+                    <div className="absolute -top-3 -left-3 text-3xl animate-spin-slow">🔄</div>
+                </button>
 
-                <div className="mt-4 text-xs text-blue-400 font-mono h-4">
+                <button
+                    onClick={onMenu}
+                    className="w-full max-w-xs bg-white border-4 border-black rounded-xl py-3 active:scale-95 transition-transform"
+                >
+                    <span className="font-bold text-black uppercase">BACK TO MENU</span>
+                </button>
+
+                <div className="font-mono text-white text-xs bg-black px-2">
                     {status}
                 </div>
             </div>

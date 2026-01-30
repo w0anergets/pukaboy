@@ -24,7 +24,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ sessionId, user, onSta
         let channel: any = null;
 
         const init = async () => {
-            // Initial Fetch
             const game = await gameService.getGame(sessionId);
             if (!game) {
                 setError("Game not found");
@@ -32,14 +31,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ sessionId, user, onSta
             }
             setSession(game);
 
-            // Subscribe
             channel = supabase
                 .channel(`lobby_${sessionId}`)
                 .on(
                     'postgres_changes',
                     { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
                     (payload) => {
-                        console.log("Lobby Update:", payload.new);
                         setSession(payload.new as GameSession);
                     }
                 )
@@ -47,13 +44,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ sessionId, user, onSta
         };
 
         init();
-
-        return () => {
-            if (channel) supabase.removeChannel(channel);
-        };
+        return () => { if (channel) supabase.removeChannel(channel); };
     }, [sessionId]);
 
-    // 2. Fetch Opponent Details
+    // 2. Fetch Opponent
     useEffect(() => {
         if (!session) return;
         const oppId = session.host_id === user.id ? session.guest_id : session.host_id;
@@ -64,94 +58,95 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({ sessionId, user, onSta
             setOpponent(null);
         }
 
-        // Auto-Start Check (If status became RACING)
         if (session.status === 'RACING') {
             onStart(session);
         }
-
     }, [session, user.id, onStart]);
-
 
     const handleHostStart = async () => {
         if (!amIHost || !session?.guest_id) return;
-        // Host triggers start
         await gameService.startGame(sessionId);
-        // UI will react to Realtime update -> onStart
     };
 
-    if (error) {
-        return (
-            <div className="h-screen flex flex-col items-center justify-center text-white p-4 text-center">
-                <div className="text-red-500 mb-4 text-2xl">⚠️</div>
-                <div>{error}</div>
-                <button onClick={onBack} className="mt-8 text-blue-400">Back to Menu</button>
-            </div>
-        );
-    }
-
-    if (!session) {
-        return <div className="h-screen flex items-center justify-center text-gray-500">Loading Lobby...</div>;
-    }
+    if (error) return <div className="h-screen bg-black text-white flex items-center justify-center font-bold text-2xl">{error}</div>;
+    if (!session) return <div className="h-screen bg-black text-white flex items-center justify-center font-bold text-2xl">LOADING...</div>;
 
     return (
-        <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white p-6">
-            <h2 className="text-xl font-bold mb-8 text-gray-400 tracking-widest uppercase">
-                {amIHost ? "Waiting for Opponent" : "Waiting for Host"}
-            </h2>
-
-            <div className="flex gap-4 items-center mb-12 w-full justify-center">
-                {/* MY AVATAR */}
-                <div className="flex flex-col items-center">
-                    <div className="w-24 h-24 rounded-full flex items-center justify-center mb-2 shadow-[0_0_15px_rgba(37,99,235,0.6)] border-4 border-gray-800 bg-gray-800 overflow-hidden relative">
-                        {user.avatar_url ? <img src={user.avatar_url} className="w-full h-full object-cover" /> : <span className="text-3xl">😎</span>}
-                        <div className="absolute bottom-0 w-full text-[8px] bg-blue-600 text-center py-1">YOU</div>
-                    </div>
-                </div>
-
-                <div className="text-2xl font-black text-gray-600 italic">VS</div>
-
-                {/* OPPONENT AVATAR */}
-                <div className="flex flex-col items-center">
-                    <div className={`w-24 h-24 rounded-full flex items-center justify-center mb-2 border-4 border-gray-900 transition-all overflow-hidden relative ${session.guest_id ? 'shadow-[0_0_15px_rgba(220,38,38,0.6)]' : 'border-dashed border-gray-700'}`}>
-                        {session.guest_id ? (
-                            opponent?.avatar_url ? <img src={opponent.avatar_url} className="w-full h-full object-cover" /> : <span className="text-3xl">😈</span>
-                        ) : (
-                            <span className="animate-pulse text-gray-600 text-4xl">?</span>
-                        )}
-                    </div>
-                    <div className="font-bold text-sm bg-gray-800 px-3 py-1 rounded-full text-gray-400">
-                        {opponent?.full_name || '...'}
-                    </div>
-                </div>
+        <div className="flex flex-col h-screen bg-black overflow-hidden relative font-sans">
+            {/* Split Background */}
+            <div className="absolute inset-0 flex">
+                <div className="w-1/2 bg-[#DFFF00] border-r-4 border-black box-border" />
+                <div className="w-1/2 bg-[#FF00FF] border-l-4 border-black box-border" />
             </div>
 
-            {/* Host Controls */}
-            {amIHost && session.guest_id && (
-                <button
-                    onClick={handleHostStart}
-                    className="w-full bg-gradient-to-r from-green-500 to-emerald-600 text-white font-black text-xl py-5 rounded-2xl shadow-[0_5px_0_rgb(21,128,61)] active:shadow-none active:translate-y-[5px] transition-all animate-pulse"
-                >
-                    START RACE 🚀
-                </button>
-            )}
+            {/* Content Layer */}
+            <div className="relative z-10 flex flex-col h-full">
 
-            {/* Guest Message */}
-            {!amIHost && session.guest_id && (
-                <div className="text-green-400 animate-pulse bg-green-900/20 px-4 py-2 rounded-lg text-center">
-                    Host is starting the race...
+                {/* Header */}
+                <div className="h-24 flex items-center justify-center">
+                    <h1 className="text-4xl font-black text-black drop-shadow-[2px_2px_0px_white]">LOBBY</h1>
                 </div>
-            )}
 
-            {/* Waiting Message */}
-            {!session.guest_id && (
-                <div className="text-center text-gray-500 text-xs max-w-xs">
-                    Invite a friend using the "Share" button in Telegram menu, or wait for someone to join via link.
+                {/* VS Area */}
+                <div className="flex-1 flex w-full items-center">
+
+                    {/* Left: Host */}
+                    <div className="w-1/2 flex flex-col items-center justify-center p-4">
+                        <div className="w-24 h-24 rounded-full border-4 border-black bg-white overflow-hidden mb-2 shadow-[4px_4px_0px_0px_black]">
+                            {(amIHost ? user : opponent) ? (
+                                <img src={(amIHost ? user : opponent)?.avatar_url || ''} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full bg-gray-300" />
+                            )}
+                        </div>
+                        <div className="bg-black text-white px-2 py-1 font-bold font-mono text-sm transform -rotate-2">
+                            {(amIHost ? user.username : opponent?.username) || 'HOST'}
+                        </div>
+                    </div>
+
+                    {/* VS Badge */}
+                    <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 z-20">
+                        <div className="bg-white border-4 border-black px-4 py-2 font-black text-3xl italic shadow-[4px_4px_0px_0px_black] transform rotate-6">
+                            VS
+                        </div>
+                    </div>
+
+                    {/* Right: Guest */}
+                    <div className="w-1/2 flex flex-col items-center justify-center p-4">
+                        <div className="w-24 h-24 rounded-full border-4 border-black bg-white overflow-hidden mb-2 shadow-[4px_4px_0px_0px_black] border-dashed">
+                            {(!amIHost ? user : opponent) ? (
+                                <img src={(!amIHost ? user : opponent)?.avatar_url || ''} className="w-full h-full object-cover" />
+                            ) : (
+                                <div className="w-full h-full flex items-center justify-center text-4xl animate-pulse">?</div>
+                            )}
+                        </div>
+                        <div className="bg-black text-white px-2 py-1 font-bold font-mono text-sm transform rotate-2">
+                            {(!amIHost ? user.username : opponent?.username) || 'WAITING...'}
+                        </div>
+                    </div>
                 </div>
-            )}
 
-            <button onClick={onBack} className="mt-12 text-gray-600 hover:text-white transition-colors text-sm">
-                Cancel
-            </button>
+                {/* Footer Actions */}
+                <div className="h-32 flex flex-col items-center justify-center p-6 space-y-4">
+                    {amIHost ? (
+                        <button
+                            onClick={handleHostStart}
+                            disabled={!session.guest_id}
+                            className={`w-full max-w-xs border-4 border-black rounded-xl py-4 font-black text-2xl uppercase transition-transform active:scale-95 shadow-[4px_4px_0px_0px_black] ${session.guest_id ? 'bg-white text-black animate-pulse' : 'bg-gray-300 text-gray-500 cursor-not-allowed'}`}
+                        >
+                            {session.guest_id ? 'START RAGE!' : 'WAITING...'}
+                        </button>
+                    ) : (
+                        <div className="bg-black text-white px-6 py-3 font-bold text-xl rounded-xl border-4 border-white animate-pulse">
+                            WAITING FOR HOST
+                        </div>
+                    )}
+
+                    <button onClick={onBack} className="text-black font-bold underline hover:text-white">
+                        CANCEL
+                    </button>
+                </div>
+            </div>
         </div>
     );
 };
