@@ -62,7 +62,7 @@ export const soundService = {
             const osc = this.ctx!.createOscillator();
             const gain = this.ctx!.createGain();
 
-            osc.className = 'square';
+            osc.type = 'square';
             osc.frequency.value = freq;
 
             gain.gain.setValueAtTime(0.1, now + i * 0.1);

@@ -1,17 +1,47 @@
+import React, { useEffect, useState, useRef } from 'react';
+import type { UserProfile } from '../services/userService';
+import { gameService } from '../services/gameService';
+import type { GameSession } from '../services/gameService';
+import { supabase } from '../lib/supabase';
+import WebApp from '@twa-dev/sdk';
+import spritesBodies from '../assets/sprites/bodies.jpg';
+import spritesEngines from '../assets/sprites/engines.jpg';
 import { soundService } from '../services/soundService';
 
-// ... (imports)
+interface GameScreenProps {
+    sessionId: string;
+    user: UserProfile;
+    initialSession: GameSession;
+    onFinish: (session: GameSession) => void;
+}
 
-// Speed Lines SVG Data (Radial lines)
-const SPEED_LINES_BG = `url('data:image/svg+xml;utf8,<svg width="100" height="100" xmlns="http://www.w3.org/2000/svg"><defs><radialGradient id="grad" cx="50%" cy="50%" r="50%" fx="50%" fy="50%"><stop offset="0%" style="stop-color:white;stop-opacity:0" /><stop offset="100%" style="stop-color:white;stop-opacity:1" /></radialGradient></defs><path d="M50 50 L0 0 M50 50 L100 0 M50 50 L100 100 M50 50 L0 100" stroke="url(%23grad)" stroke-width="2" opacity="0.5"/></svg>')`;
+const WIN_SCORE = 100;
 
 export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initialSession, onFinish }) => {
-    // ... (existing state)
+    // State
+    const [session, setSession] = useState<GameSession>(initialSession);
+    const [myScore, setMyScore] = useState(0); // Optimistic Score
+    const [oppScore, setOppScore] = useState(0);
+
+    const [countdown, setCountdown] = useState<number | null>(null);
+    const [timer, setTimer] = useState("0.00");
 
     // Juice State
     const [shake, setShake] = useState(0);
     const [cps, setCps] = useState(0);
     const clicksRef = useRef<number[]>([]);
+
+    // Refs for stale closure prevention
+    const myScoreRef = useRef(0);
+    const sessionRef = useRef(session);
+    // Realtime subscription ref
+    const isFinishedRef = useRef(false);
+
+    const amIHost = session.host_id === user.id;
+
+    // Sync Refs
+    useEffect(() => { myScoreRef.current = myScore; }, [myScore]);
+    useEffect(() => { sessionRef.current = session; }, [session]);
 
     // Audio Init
     useEffect(() => {
@@ -30,131 +60,238 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
         return () => clearInterval(interval);
     }, []);
 
-    // ... (existing effects)
-
-    // Finish Sound
+    // 1. Countdown Logic
     useEffect(() => {
-        if (session.status === 'FINISHED') {
-            soundService.playWin();
+        if (session.start_time) {
+            const start = new Date(session.start_time).getTime();
+            const now = Date.now();
+            const diff = start - now;
+
+            if (diff > 0) {
+                setCountdown(Math.ceil(diff / 1000));
+
+                const interval = setInterval(() => {
+                    const d = start - Date.now();
+                    if (d <= 0) {
+                        setCountdown(null);
+                        clearInterval(interval);
+                        WebApp.HapticFeedback.notificationOccurred('success');
+                    } else {
+                        setCountdown(Math.ceil(d / 1000));
+                    }
+                }, 100);
+                return () => clearInterval(interval);
+            }
         }
-    }, [session.status]);
+    }, [session.start_time]);
+
+    // 2. Race Timer
+    useEffect(() => {
+        if (!session.start_time || countdown !== null) return;
+
+        let reqId: number;
+        const start = new Date(session.start_time).getTime();
+
+        const loop = () => {
+            const now = Date.now();
+            setTimer(((now - start) / 1000).toFixed(2));
+            reqId = requestAnimationFrame(loop);
+        };
+        loop();
+        return () => cancelAnimationFrame(reqId);
+    }, [session.start_time, countdown]);
 
 
+    // 3. Realtime Subscription
+    useEffect(() => {
+        const channel = supabase
+            .channel(`game_${sessionId}`)
+            .on(
+                'postgres_changes',
+                { event: 'UPDATE', schema: 'public', table: 'game_sessions', filter: `id=eq.${sessionId}` },
+                (payload) => {
+                    const newSess = payload.new as GameSession;
+                    setSession(newSess);
+
+                    // Sync Opponent Score (Always)
+                    const sOppScore = amIHost ? newSess.guest_score : newSess.host_score;
+                    setOppScore(sOppScore);
+
+                    // Sync My Score (Only if Server is ahead - rare, or if reset happen)
+                    const sMyScore = amIHost ? newSess.host_score : newSess.guest_score;
+                    if (sMyScore > myScoreRef.current) {
+                        setMyScore(sMyScore);
+                    }
+
+                    // Check Finish
+                    if (newSess.status === 'FINISHED' && !isFinishedRef.current) {
+                        isFinishedRef.current = true;
+                        soundService.playWin(); // Play win sound on finish
+                        onFinish(newSess);
+                    }
+                }
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [sessionId, amIHost, onFinish]);
+
+
+    // 4. Interaction
     const handleTap = () => {
-        if (countdown !== null) return;
+        if (countdown !== null) return; // Block input during countdown
 
         // Track Click for CPS
         clicksRef.current.push(Date.now());
 
         // Shake Effect
-        setShake(prev => 5); // Set shake intensity
+        setShake(5);
         setTimeout(() => setShake(0), 50);
 
         setMyScore(prev => {
-            if (prev >= WIN_SCORE) return prev;
+            if (prev >= WIN_SCORE) return prev; // Client-side Cap
+
             const newScore = prev + 1;
 
+            // Optimistic Feedback
             WebApp.HapticFeedback.impactOccurred('medium');
             soundService.playTap();
 
+            // Server Sync
             gameService.click(sessionId, user.id);
+
+            // Finish Check (Client-side trigger)
             if (newScore >= WIN_SCORE) {
                 gameService.finishGame(sessionId, user.id);
             }
+
             return newScore;
         });
     };
 
-    // Juice Styles
-    const shakeStyle = shake ? { transform: `translate(${Math.random() * shake - shake / 2}px, ${Math.random() * shake - shake / 2}px)` } : {};
-    const vignetteOpacity = Math.min(cps / 15, 0.8); // Max opacity at 15 CPS
-    const speedLinesOpacity = Math.min(cps / 20, 0.6);
-
+    // Helper to get consistent sticker for user based on ID
     const getStickerStyle = (id: number, type: 'body' | 'engine') => {
-        // ... (existing sticker logic)
+        // Simple hash to pick 1 of 4 quadrants
         const index = id % 4;
+        // 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
         const x = (index % 2) * 100;
         const y = Math.floor(index / 2) * 100;
+
         return {
             backgroundImage: `url(${type === 'body' ? spritesBodies : spritesEngines})`,
-            backgroundPosition: `${x}% ${y}%`,
+            backgroundPosition: `${x}% ${y}%`, // Approximate for 2x2 grid
             backgroundSize: '200% 200%',
             width: '100%',
             height: '100%'
         };
     };
 
+    // Render Helpers
     const getProgress = (s: number) => Math.min((s / WIN_SCORE) * 100, 100);
+
+    // Juice Styles
+    const shakeStyle = shake ? { transform: `translate(${Math.random() * shake - shake / 2}px, ${Math.random() * shake - shake / 2}px)` } : {};
+    const vignetteOpacity = Math.min(cps / 15, 0.8); // Max opacity at 15 CPS
+    const speedLinesOpacity = Math.min(cps / 20, 0.6);
 
     return (
         <div
             className="flex flex-col h-screen bg-black overflow-hidden select-none relative"
             style={{ touchAction: 'none' }}
         >
-            {/* Base Layer: Split Background (Shake applied here) */}
+            {/* Split Background (Shake applied) */}
             <div className="absolute inset-0 flex" style={shakeStyle}>
                 <div className="w-1/2 bg-[#DFFF00] border-r-4 border-black box-border relative">
+                    {/* Checkered Pattern Strip (Left) */}
                     <div className="absolute right-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
                 </div>
                 <div className="w-1/2 bg-[#FF00FF] border-l-4 border-black box-border relative">
+                    {/* Checkered Pattern Strip (Right) */}
                     <div className="absolute left-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
                 </div>
             </div>
 
-            {/* Elements Layer (Avatars) */}
+            {/* Elements Layer (Shake applied) */}
             <div className="relative z-10 flex flex-col h-full pointer-events-none" style={shakeStyle}>
 
-                {/* Goal Area (No Text) */}
-                <div className="h-24" />
+                {/* Top Spacer */}
+                <div className="h-24"></div>
 
                 {/* TRACKS */}
                 <div className="flex-1 flex w-full relative">
-                    {/* PLAYER 1 (ME) */}
+
+                    {/* PLAYER 1 (ME) - LEFT */}
                     <div className="w-1/2 relative h-full">
                         <div
                             className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-75 ease-linear flex flex-col items-center"
                             style={{ bottom: `${getProgress(myScore)}%`, marginBottom: '-60px' }}
                         >
                             <div className={`relative w-32 h-32 ${cps > 5 ? 'animate-bounce' : ''}`}>
-                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0"><div style={getStickerStyle(user.id, 'engine')} /></div>
-                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10"><div style={getStickerStyle(user.id, 'body')} /></div>
+                                {/* Engine (Behind) */}
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
+                                    <div style={getStickerStyle(user.id, 'engine')} />
+                                </div>
+
+                                {/* Body (Middle) */}
+                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
+                                    <div style={getStickerStyle(user.id, 'body')} />
+                                </div>
+
+                                {/* Head (Top) */}
                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
                                     <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name}`} className="w-full h-full object-cover" />
                                 </div>
+
                                 {/* Exhaust Spark */}
                                 {cps > 8 && <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-4xl animate-ping">💥</div>}
                             </div>
                         </div>
+
+                        {/* Rage Meter (Visual Bar on side) */}
                         <div className="absolute left-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
                             <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(myScore)}%` }} />
                         </div>
                     </div>
 
-                    {/* PLAYER 2 (OPPONENT) */}
+                    {/* PLAYER 2 (OPPONENT) - RIGHT */}
                     <div className="w-1/2 relative h-full">
                         <div
                             className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-100 ease-linear flex flex-col items-center"
                             style={{ bottom: `${getProgress(oppScore)}%`, marginBottom: '-60px' }}
                         >
                             <div className="relative w-32 h-32">
-                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0"><div style={getStickerStyle(session.guest_id || 999, 'engine')} /></div>
-                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10"><div style={getStickerStyle(session.guest_id || 999, 'body')} /></div>
+                                {/* Engine */}
+                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
+                                    <div style={getStickerStyle(session.guest_id || 999, 'engine')} />
+                                </div>
+
+                                {/* Body */}
+                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
+                                    <div style={getStickerStyle(session.guest_id || 999, 'body')} />
+                                </div>
+
+                                {/* Head */}
                                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
                                     <div className="w-full h-full bg-gray-200 flex items-center justify-center font-bold text-black text-xs">OPP</div>
                                 </div>
                             </div>
                         </div>
+
+                        {/* Rage Meter (Visual Bar on side) */}
                         <div className="absolute right-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
                             <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(oppScore)}%` }} />
                         </div>
                     </div>
+
                 </div>
 
-                {/* Start Area (No Text) */}
-                <div className="h-24" />
+                {/* Start Spacer */}
+                <div className="h-24"></div>
             </div>
 
-            {/* SPEED FX LAYERS */}
+            {/* BATTERY/SPEED EFFECTS */}
             {/* Speed Lines */}
             <div
                 className="absolute inset-0 pointer-events-none z-20 bg-no-repeat bg-center bg-cover mix-blend-overlay transition-opacity duration-200"
@@ -170,13 +307,12 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                 style={{ opacity: vignetteOpacity }}
             />
 
-
-            {/* Tap Zone */}
+            {/* Tap Zone (Invisible Top Layer) */}
             <div
                 className="absolute inset-0 z-30 flex items-center justify-center"
                 onPointerDown={handleTap}
             >
-                {/* Initial Countdown */}
+                {/* Initial Countdown Overlay */}
                 {countdown !== null && (
                     <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-40 backdrop-blur-sm">
                         <div className="text-9xl font-black text-yellow-400 animate-ping">
@@ -186,9 +322,9 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                 )}
             </div>
 
-            {/* Timer */}
+            {/* Timer Overlay (Top Center) */}
             <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40">
-                <div className="bg-black text-white font-mono text-xl px-4 py-1 rounded border-2 border-white">
+                <div className="bg-black text-yellow-400 font-mono text-xl px-4 py-1 rounded border-2 border-white">
                     {timer}s
                 </div>
             </div>
