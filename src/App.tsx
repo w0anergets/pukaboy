@@ -39,6 +39,7 @@ function App() {
   // UI State
   const [mode, setMode] = useState<AppMode>('MENU');
   const [status, setStatus] = useState("Инициализация...");
+  const [isLoading, setIsLoading] = useState(true);
 
   // User Data
   const [dbUser, setDbUser] = useState<UserProfile | null>(null);
@@ -101,18 +102,25 @@ function App() {
                   setGame({ myClicks: 0, opponentClicks: WIN_SCORE, myTime: null, opponentTime: now - startTime });
                 }
                 setMode('FINISHED');
+                setIsLoading(false);
               } else {
                 log("Joining session...");
-                joinSession(hostSessionId, userData.id);
+                joinSession(hostSessionId, userData.id).then(() => {
+                  setIsLoading(false);
+                });
               }
             });
+          } else {
+            setIsLoading(false); // No link, just show menu
           }
         } else {
           setStatus("Ошибка входа (DB)");
+          setIsLoading(false);
         }
       });
     } else {
       setStatus("Ошибка: Запустите из Telegram");
+      setIsLoading(false);
     }
 
     return () => {
@@ -184,20 +192,30 @@ function App() {
     if (!dbUser) return;
     const amIHost = newSession.host_id === dbUser.id;
 
-    // Check for Rematch Link
-    if (newSession.next_game_id && mode === 'FINISHED') {
-      // Wait a bit then auto-redirect or show notification?
-      // Let's just update the button or auto-join if we are the guest?
-      // For now simpler: User will see "Join Rematch" button appear because we render based on sessionData
+    // RESET DETECTED: If status is LOBBY, ensure local scores are 0
+    if (newSession.status === 'LOBBY') {
+      if (game.myClicks > 0 || game.opponentClicks > 0 || mode === 'FINISHED') {
+        log("Resetting local state for new lobby/rematch");
+        setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
+        setMode('LOBBY');
+        setStatus("Ожидание соперника...");
+      }
     }
 
     // Update Scores
     const serverMyScore = amIHost ? newSession.host_score : newSession.guest_score;
     const serverOppScore = amIHost ? newSession.guest_score : newSession.host_score;
 
+    // Sync Scores (Only update if server has more, OR if we strictly follow server for opponents)
+    // Fix: Don't use Math.max if we expect resets.
+    // Actually, if we reset on LOBBY, Math.max is fine for RACING, BUT if server is slow to update 0 -> 0, 
+    // and we have 100 locally... we might keep 100. 
+    // Better: Always sync to server, but keep local optimistic increment for MY score.
+
     setGame(prev => ({
       ...prev,
-      myClicks: Math.max(prev.myClicks, serverMyScore),
+      // For my clicks: use max (optimistic) unless server is 0 (reset)
+      myClicks: (newSession.status === 'LOBBY') ? 0 : Math.max(prev.myClicks, serverMyScore),
       opponentClicks: serverOppScore
     }));
 
@@ -205,6 +223,7 @@ function App() {
     if (newSession.status === 'RACING' && mode !== 'RACING') {
       log("RACING STARTED!");
       setMode('RACING');
+      setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null }); // Hard reset on start to be sure
       const startT = new Date(newSession.start_time!).getTime();
       startTimeRef.current = startT;
       // Vibrate only when actual start happens
@@ -238,6 +257,9 @@ function App() {
     if (id) {
       setSessionId(id);
       setMode('LOBBY');
+      // Reset State
+      setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
+
       setSessionData({
         id,
         host_id: dbUser.id,
@@ -248,7 +270,7 @@ function App() {
         start_time: null,
         winner_id: null,
         created_at: new Date().toISOString(),
-        next_game_id: null, // Added for rematch
+        next_game_id: null,
       });
 
       // Generate Link
@@ -268,6 +290,9 @@ function App() {
     if (success) {
       setSessionId(sessId);
       setMode('LOBBY');
+      // Reset State
+      setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
+
       const initial = await gameService.getGame(sessId);
       if (initial) {
         setSessionData(initial);
@@ -279,6 +304,8 @@ function App() {
 
   const doStart = async () => {
     if (!sessionId) return;
+    // Reset local state just before start too
+    setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
     await gameService.startGame(sessionId);
   };
 
@@ -293,6 +320,9 @@ function App() {
 
     // Optimistic UI update
     const newClicks = game.myClicks + 1;
+    // Cap at 100 visually
+    if (newClicks > WIN_SCORE) return;
+
     setGame(prev => ({ ...prev, myClicks: newClicks }));
 
     // Stronger Feedback
@@ -329,15 +359,22 @@ function App() {
       setStatus("Creating Rematch...");
       const newGameId = await gameService.createRematch(sessionData.id, dbUser.id);
       if (newGameId) {
-        joinSession(newGameId, dbUser.id); // Auto-join self
+        // Host moves to new game simply by setting ID. 
+        // createRematch creates it with me as host.
+        // We do NOT call joinSession (which tries to set guest_id).
+        setSessionId(newGameId);
+        setMode('LOBBY');
+        setGame({ myClicks: 0, opponentClicks: 0, myTime: null, opponentTime: null });
+        // Fetch new initial data
+        gameService.getGame(newGameId).then(g => setSessionData(g));
       }
     } else {
       // Guest Joins (if link exists)
       if (sessionData.next_game_id) {
         joinSession(sessionData.next_game_id, dbUser.id);
       } else {
-        // Should not happen if button logic is correct
         log("Waiting for host to create rematch...");
+        setStatus("Ждем хоста...");
       }
     }
   };
@@ -381,6 +418,15 @@ function App() {
       </div>
 
       {(function () {
+        if (isLoading) {
+          return (
+            <div className="flex flex-col items-center justify-center min-h-screen bg-gray-900 text-white">
+              <div className="text-4xl animate-bounce mb-4">👻</div>
+              <div className="text-sm font-mono text-gray-400">CONNECTING...</div>
+            </div>
+          );
+        }
+
         if (mode === 'SHOP') {
           return <ShopView onBack={() => setMode('MENU')} onBuy={handleBuy} />;
         }

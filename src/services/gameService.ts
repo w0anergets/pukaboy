@@ -42,6 +42,23 @@ export const gameService = {
      * Join an existing game
      */
     async joinGame(gameId: string, guestId: number): Promise<boolean> {
+        // 1. Check if we are already the host (prevent self-join)
+        const { data: game } = await supabase
+            .from('game_sessions')
+            .select('host_id, guest_id')
+            .eq('id', gameId)
+            .single();
+
+        if (game && game.host_id === guestId) {
+            console.log("User is host, rejoin as host (no-op)");
+            return true; // Already in game as host
+        }
+
+        if (game && game.guest_id === guestId) {
+            return true; // Already joined
+        }
+
+        // 2. Join as guest
         const { error } = await supabase
             .from('game_sessions')
             .update({ guest_id: guestId })
