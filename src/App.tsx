@@ -27,7 +27,13 @@ function App() {
 
     // Global Styles
     document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none'; // CRITICAL: Prevent swipes globally
     document.body.style.backgroundColor = '#111827'; // gray-900
+
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
 
     // Auth
     // @ts-ignore

@@ -113,26 +113,35 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
     // 4. Interaction
     const handleTap = () => {
         if (countdown !== null) return; // Block input during countdown
-        if (myScore >= WIN_SCORE) return;
 
-        // Optimistic
-        const newScore = myScore + 1;
-        setMyScore(newScore);
-        WebApp.HapticFeedback.impactOccurred('medium');
+        setMyScore(prev => {
+            if (prev >= WIN_SCORE) return prev; // Client-side Cap
 
-        // Server
-        gameService.click(sessionId, user.id);
+            const newScore = prev + 1;
 
-        if (newScore >= WIN_SCORE) {
-            gameService.finishGame(sessionId, user.id);
-        }
+            // Optimistic Feedback
+            WebApp.HapticFeedback.impactOccurred('medium');
+
+            // Server Sync
+            gameService.click(sessionId, user.id);
+
+            // Finish Check (Client-side trigger)
+            if (newScore >= WIN_SCORE) {
+                gameService.finishGame(sessionId, user.id);
+            }
+
+            return newScore;
+        });
     };
 
     // Render Helpers
     const getProgress = (s: number) => Math.min((s / WIN_SCORE) * 100, 100);
 
     return (
-        <div className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden touch-none select-none">
+        <div
+            className="flex flex-col h-screen bg-gray-900 text-white overflow-hidden select-none"
+            style={{ touchAction: 'none' }} // Force disable browser gestures
+        >
             {/* Header */}
             <div className="h-24 bg-gray-800 flex items-center justify-center border-b border-gray-700 bg-opacity-80 backdrop-blur-md z-10">
                 <div className={`font-mono text-5xl font-bold tracking-tighter ${countdown ? 'text-red-500 animate-pulse' : 'text-yellow-400'}`}>
