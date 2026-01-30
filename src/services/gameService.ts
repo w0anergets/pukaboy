@@ -10,7 +10,7 @@ export interface GameSession {
     start_time: string | null;
     winner_id: number | null;
     created_at: string;
-    next_game_id?: string | null; // For rematch
+    next_game_id?: string | null;
 }
 
 export const gameService = {
