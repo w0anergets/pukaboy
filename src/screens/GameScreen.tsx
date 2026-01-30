@@ -4,8 +4,8 @@ import { gameService } from '../services/gameService';
 import type { GameSession } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import WebApp from '@twa-dev/sdk';
-import spritesBodies from '../assets/sprites/bodies.jpg';
-import spritesEngines from '../assets/sprites/engines.jpg';
+import spritesBody from '../assets/sprites/sticker_body.png';
+import spritesFlame from '../assets/sprites/sticker_flame.png';
 import { soundService } from '../services/soundService';
 
 interface GameScreenProps {
@@ -17,6 +17,17 @@ interface GameScreenProps {
 
 const WIN_SCORE = 100;
 
+// Particle System for Text (PUK, TAP, BOY)
+interface Particle {
+    id: number;
+    text: string;
+    x: number;
+    y: number;
+    vx: number;
+    vy: number;
+    life: number;
+}
+
 export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initialSession, onFinish }) => {
     // State
     const [session, setSession] = useState<GameSession>(initialSession);
@@ -27,14 +38,13 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
     const [timer, setTimer] = useState("0.00");
 
     // Juice State
-    const [shake, setShake] = useState(0);
-    const [cps, setCps] = useState(0);
+    const [particles, setParticles] = useState<Particle[]>([]);
+    const [cps, setCps] = useState(0); // Clicks Per Second
     const clicksRef = useRef<number[]>([]);
 
-    // Refs for stale closure prevention
+    // Refs
     const myScoreRef = useRef(0);
     const sessionRef = useRef(session);
-    // Realtime subscription ref
     const isFinishedRef = useRef(false);
 
     const amIHost = session.host_id === user.id;
@@ -53,12 +63,28 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
     useEffect(() => {
         const interval = setInterval(() => {
             const now = Date.now();
-            // Keep clicks from last 1s
             clicksRef.current = clicksRef.current.filter(t => now - t < 1000);
             setCps(clicksRef.current.length);
         }, 100);
         return () => clearInterval(interval);
     }, []);
+
+    // Particle Game Loop
+    useEffect(() => {
+        let frameId: number;
+        const loop = () => {
+            setParticles(prev => prev.map(p => ({
+                ...p,
+                x: p.x + p.vx,
+                y: p.y + p.vy,
+                life: p.life - 0.05
+            })).filter(p => p.life > 0));
+            frameId = requestAnimationFrame(loop);
+        };
+        loop();
+        return () => cancelAnimationFrame(frameId);
+    }, []);
+
 
     // 1. Countdown Logic
     useEffect(() => {
@@ -69,15 +95,19 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
 
             if (diff > 0) {
                 setCountdown(Math.ceil(diff / 1000));
-
                 const interval = setInterval(() => {
                     const d = start - Date.now();
                     if (d <= 0) {
                         setCountdown(null);
                         clearInterval(interval);
+                        soundService.playStart(); // Go sound
                         WebApp.HapticFeedback.notificationOccurred('success');
                     } else {
-                        setCountdown(Math.ceil(d / 1000));
+                        const sec = Math.ceil(d / 1000);
+                        if (sec !== countdown) {
+                            soundService.playCountdown();
+                            setCountdown(sec);
+                        }
                     }
                 }, 100);
                 return () => clearInterval(interval);
@@ -88,19 +118,15 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
     // 2. Race Timer
     useEffect(() => {
         if (!session.start_time || countdown !== null) return;
-
         let reqId: number;
         const start = new Date(session.start_time).getTime();
-
         const loop = () => {
-            const now = Date.now();
-            setTimer(((now - start) / 1000).toFixed(2));
+            setTimer(((Date.now() - start) / 1000).toFixed(2));
             reqId = requestAnimationFrame(loop);
         };
         loop();
         return () => cancelAnimationFrame(reqId);
     }, [session.start_time, countdown]);
-
 
     // 3. Realtime Subscription
     useEffect(() => {
@@ -117,7 +143,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     const sOppScore = amIHost ? newSess.guest_score : newSess.host_score;
                     setOppScore(sOppScore);
 
-                    // Sync My Score (Only if Server is ahead - rare, or if reset happen)
+                    // Sync My Score (Only if Server is ahead - rare)
                     const sMyScore = amIHost ? newSess.host_score : newSess.guest_score;
                     if (sMyScore > myScoreRef.current) {
                         setMyScore(sMyScore);
@@ -126,7 +152,7 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
                     // Check Finish
                     if (newSess.status === 'FINISHED' && !isFinishedRef.current) {
                         isFinishedRef.current = true;
-                        soundService.playWin(); // Play win sound on finish
+                        soundService.playWin();
                         onFinish(newSess);
                     }
                 }
@@ -138,196 +164,216 @@ export const GameScreen: React.FC<GameScreenProps> = ({ sessionId, user, initial
         };
     }, [sessionId, amIHost, onFinish]);
 
+    // 4. Interaction (TAP)
+    const handleTap = (e: React.PointerEvent) => {
+        if (countdown !== null) return;
 
-    // 4. Interaction
-    const handleTap = () => {
-        if (countdown !== null) return; // Block input during countdown
+        // Prevent multi-touch logic is in App.tsx, but ensure here too just in case
+        if (!e.isPrimary) return;
 
-        // Track Click for CPS
         clicksRef.current.push(Date.now());
 
-        // Shake Effect
-        setShake(5);
-        setTimeout(() => setShake(0), 50);
+        // Spawn Text Particle
+        const words = ['PUK', 'TAP', 'BOY', 'GO!', '🚀'];
+        const word = words[Math.floor(Math.random() * words.length)];
+        // Random drift direction
+        const angle = Math.random() * Math.PI * 2;
+        const speed = 2 + Math.random() * 3;
+
+        setParticles(prev => [...prev, {
+            id: Date.now() + Math.random(),
+            text: word,
+            x: e.clientX,
+            y: e.clientY,
+            vx: Math.cos(angle) * speed,
+            vy: Math.sin(angle) * speed,
+            life: 1.0
+        }]);
 
         setMyScore(prev => {
-            if (prev >= WIN_SCORE) return prev; // Client-side Cap
-
+            if (prev >= WIN_SCORE) return prev;
             const newScore = prev + 1;
 
-            // Optimistic Feedback
-            WebApp.HapticFeedback.impactOccurred('medium');
+            WebApp.HapticFeedback.impactOccurred('light');
             soundService.playTap();
-
-            // Server Sync
             gameService.click(sessionId, user.id);
 
-            // Finish Check (Client-side trigger)
             if (newScore >= WIN_SCORE) {
                 gameService.finishGame(sessionId, user.id);
             }
-
             return newScore;
         });
     };
 
-    // Helper to get consistent sticker for user based on ID
-    const getStickerStyle = (id: number, type: 'body' | 'engine') => {
-        // Simple hash to pick 1 of 4 quadrants
-        const index = id % 4;
-        // 0: Top-Left, 1: Top-Right, 2: Bottom-Left, 3: Bottom-Right
-        const x = (index % 2) * 100;
-        const y = Math.floor(index / 2) * 100;
+    // Calculate Vertical Positions (50% is center)
+    // If I have higher CPS/Score, I move up relative to opponent?
+    // User requested: "Who is faster moves up".
+    // Let's use CPS + Score Delta to control Y position.
 
-        return {
-            backgroundImage: `url(${type === 'body' ? spritesBodies : spritesEngines})`,
-            backgroundPosition: `${x}% ${y}%`, // Approximate for 2x2 grid
-            backgroundSize: '200% 200%',
-            width: '100%',
-            height: '100%'
-        };
-    };
+    // Base position = 50%
+    // If My Score > Opp Score -> Move Up (Subtract %)
+    // Max movement +/- 30%
 
-    // Render Helpers
+    const scoreDelta = myScore - oppScore;
+    const myPosOffset = Math.max(-30, Math.min(30, scoreDelta * 2));
+    // If I am leading (positive delta), my Y should be smaller (higher on screen).
+    // So 50 - myPosOffset.
+
+    const myY = 50 - myPosOffset;
+    const oppY = 50 + myPosOffset; // Opponent moves opposite
+
     const getProgress = (s: number) => Math.min((s / WIN_SCORE) * 100, 100);
-
-    // Juice Styles
-    const shakeStyle = shake ? { transform: `translate(${Math.random() * shake - shake / 2}px, ${Math.random() * shake - shake / 2}px)` } : {};
-    const vignetteOpacity = Math.min(cps / 15, 0.8); // Max opacity at 15 CPS
-    const speedLinesOpacity = Math.min(cps / 20, 0.6);
 
     return (
         <div
             className="flex flex-col h-screen bg-black overflow-hidden select-none relative"
             style={{ touchAction: 'none' }}
         >
-            {/* Split Background (Shake applied) */}
-            <div className="absolute inset-0 flex" style={shakeStyle}>
-                <div className="w-1/2 bg-[#DFFF00] border-r-4 border-black box-border relative">
-                    {/* Checkered Pattern Strip (Left) */}
-                    <div className="absolute right-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
-                </div>
-                <div className="w-1/2 bg-[#FF00FF] border-l-4 border-black box-border relative">
-                    {/* Checkered Pattern Strip (Right) */}
-                    <div className="absolute left-0 top-0 bottom-0 w-8 h-full bg-[url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAkSURBVHgB7YwxDQAADEPRu/w7Ww0O4O4yF6aGg6aKu4O1/0yQARt5Ck7CAAAAAElFTkSuQmCC')] opacity-20" />
-                </div>
+            {/* 1. Warp Speed Background */}
+            <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                {/* CSS Animation for Stars/Particles needed here. Using a simple placeholder for now */}
+                <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-gray-800 via-gray-900 to-black" />
+
+                {/* Moving Stars Effect (Fake using CSS grid or repetitivebg) */}
+                <div className="absolute inset-0 opacity-50 animate-warp-speed"
+                    style={{
+                        backgroundImage: 'radial-gradient(white 1px, transparent 1px)',
+                        backgroundSize: '40px 40px',
+                        animation: `warpSpeed ${Math.max(0.1, 1 - (cps / 20))}s linear infinite`
+                    }}
+                />
             </div>
 
-            {/* Elements Layer (Shake applied) */}
-            <div className="relative z-10 flex flex-col h-full pointer-events-none" style={shakeStyle}>
+            <style>{`
+                @keyframes warpSpeed {
+                    from { transform: translateY(-40px); }
+                    to { transform: translateY(0); }
+                }
+            `}</style>
 
-                {/* Top Spacer */}
-                <div className="h-24"></div>
+            {/* Vignette (Intense) */}
+            <div
+                className="absolute inset-0 pointer-events-none z-10 bg-[radial-gradient(circle_at_center,transparent_0%,black_120%)] transition-opacity duration-100"
+                style={{ opacity: 0.3 + Math.min(cps / 20, 0.6) }}
+            />
 
-                {/* TRACKS */}
-                <div className="flex-1 flex w-full relative">
 
-                    {/* PLAYER 1 (ME) - LEFT */}
-                    <div className="w-1/2 relative h-full">
-                        <div
-                            className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-75 ease-linear flex flex-col items-center"
-                            style={{ bottom: `${getProgress(myScore)}%`, marginBottom: '-60px' }}
-                        >
-                            <div className={`relative w-32 h-32 ${cps > 5 ? 'animate-bounce' : ''}`}>
-                                {/* Engine (Behind) */}
-                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
-                                    <div style={getStickerStyle(user.id, 'engine')} />
-                                </div>
-
-                                {/* Body (Middle) */}
-                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
-                                    <div style={getStickerStyle(user.id, 'body')} />
-                                </div>
-
-                                {/* Head (Top) */}
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
-                                    <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name}`} className="w-full h-full object-cover" />
-                                </div>
-
-                                {/* Exhaust Spark */}
-                                {cps > 8 && <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 text-4xl animate-ping">💥</div>}
-                            </div>
-                        </div>
-
-                        {/* Rage Meter (Visual Bar on side) */}
-                        <div className="absolute left-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
-                            <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(myScore)}%` }} />
-                        </div>
-                    </div>
-
-                    {/* PLAYER 2 (OPPONENT) - RIGHT */}
-                    <div className="w-1/2 relative h-full">
-                        <div
-                            className="absolute left-1/2 -translate-x-1/2 w-32 transition-all duration-100 ease-linear flex flex-col items-center"
-                            style={{ bottom: `${getProgress(oppScore)}%`, marginBottom: '-60px' }}
-                        >
-                            <div className="relative w-32 h-32">
-                                {/* Engine */}
-                                <div className="absolute top-16 left-1/2 -translate-x-1/2 w-16 h-16 z-0">
-                                    <div style={getStickerStyle(session.guest_id || 999, 'engine')} />
-                                </div>
-
-                                {/* Body */}
-                                <div className="absolute top-8 left-1/2 -translate-x-1/2 w-20 h-20 z-10">
-                                    <div style={getStickerStyle(session.guest_id || 999, 'body')} />
-                                </div>
-
-                                {/* Head */}
-                                <div className="absolute top-0 left-1/2 -translate-x-1/2 w-14 h-14 rounded-full bg-white border-2 border-black overflow-hidden z-20">
-                                    <div className="w-full h-full bg-gray-200 flex items-center justify-center font-bold text-black text-xs">OPP</div>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Rage Meter (Visual Bar on side) */}
-                        <div className="absolute right-2 bottom-4 top-4 w-4 bg-black/20 rounded-full flex flex-col-reverse p-1 overflow-hidden">
-                            <div className="w-full bg-black rounded-full transition-all duration-75" style={{ height: `${getProgress(oppScore)}%` }} />
-                        </div>
-                    </div>
-
-                </div>
-
-                {/* Start Spacer */}
-                <div className="h-24"></div>
+            {/* 2. Side Progress Bars (Earth -> Moon) */}
+            <div className="absolute left-2 top-4 bottom-4 w-6 bg-gray-800 border-2 border-white rounded-full flex flex-col-reverse p-1 z-20 overflow-hidden">
+                <div
+                    className="w-full bg-[#DFFF00] rounded-full transition-all duration-100 ease-linear shadow-[0_0_10px_#DFFF00]"
+                    style={{ height: `${getProgress(myScore)}%` }}
+                />
             </div>
 
-            {/* BATTERY/SPEED EFFECTS */}
-            {/* Speed Lines */}
-            <div
-                className="absolute inset-0 pointer-events-none z-20 bg-no-repeat bg-center bg-cover mix-blend-overlay transition-opacity duration-200"
-                style={{
-                    backgroundImage: `repeating-radial-gradient(circle at center, transparent 0, transparent 10px, rgba(255,255,255,0.2) 11px, transparent 12px)`,
-                    opacity: speedLinesOpacity,
-                    transform: 'scale(2)'
-                }}
-            />
-            {/* Vignette */}
-            <div
-                className="absolute inset-0 pointer-events-none z-20 bg-[radial-gradient(circle_at_center,transparent_30%,black_100%)] transition-opacity duration-200"
-                style={{ opacity: vignetteOpacity }}
-            />
+            <div className="absolute right-2 top-4 bottom-4 w-6 bg-gray-800 border-2 border-white rounded-full flex flex-col-reverse p-1 z-20 overflow-hidden">
+                <div
+                    className="w-full bg-[#FF00FF] rounded-full transition-all duration-100 ease-linear shadow-[0_0_10px_#FF00FF]"
+                    style={{ height: `${getProgress(oppScore)}%` }}
+                />
+            </div>
 
-            {/* Tap Zone (Invisible Top Layer) */}
+
+            {/* 3. Center Stage (Avatars) */}
+            <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
+
+                {/* OPPONENT */}
+                <div
+                    className="absolute transition-all duration-300 ease-out flex flex-col items-center"
+                    style={{
+                        top: `${oppY}%`,
+                        left: '25%', // Left lane? Or overlap? User said "Side by side"? "Start middle"
+                        transform: `translate(-50%, -50%) scale(${0.8}) opacity(0.8)`
+                    }}
+                >
+                    <div className="relative w-32 h-32 animate-bounce-slow">
+                        {/* Flame */}
+                        <div className="absolute top-20 left-1/2 -translate-x-1/2 w-16 h-24 z-0 animate-pulse">
+                            <img src={spritesFlame} className="w-full h-full object-contain rotate-180 opacity-50" />
+                        </div>
+                        {/* Body */}
+                        <div className="absolute top-0 left-0 w-full h-full z-10">
+                            <img src={spritesBody} className="w-full h-full object-contain drop-shadow-[0_0_2px_white]" />
+                        </div>
+                        {/* Head */}
+                        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-12 h-12 rounded-full border-2 border-white bg-gray-300 z-20 overflow-hidden">
+                            <div className="w-full h-full flex items-center justify-center font-bold text-[8px] text-center">OPP</div>
+                        </div>
+                    </div>
+                </div>
+
+                {/* PLAYER (ME) */}
+                <div
+                    className="absolute transition-all duration-100 ease-linear flex flex-col items-center"
+                    style={{
+                        top: `${myY}%`,
+                        left: '50%', // Center
+                        transform: `translate(-50%, -50%) scale(${1 + (cps / 50)})` // Scale with speed
+                    }}
+                >
+                    <div className="relative w-48 h-48">
+                        {/* Flame (Huge) */}
+                        <div className="absolute top-32 left-1/2 -translate-x-1/2 w-24 h-48 z-0">
+                            <img
+                                src={spritesFlame}
+                                className="w-full h-full object-contain rotate-180 origin-top"
+                                style={{ transform: `rotate(180deg) scaleY(${0.5 + Math.min(cps / 10, 1)})` }}
+                            />
+                        </div>
+
+                        {/* Body */}
+                        <div className="absolute top-0 left-0 w-full h-full z-10 animate-rubble">
+                            <img src={spritesBody} className="w-full h-full object-contain filter drop-shadow-[0_0_4px_white]" />
+                        </div>
+
+                        {/* Head */}
+                        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-20 h-20 rounded-full border-4 border-white bg-white z-20 overflow-hidden shadow-lg">
+                            <img src={user.avatar_url || `https://ui-avatars.com/api/?name=${user.full_name}`} className="w-full h-full object-cover" />
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+
+
+            {/* 4. Particle Layer */}
+            {particles.map(p => (
+                <div
+                    key={p.id}
+                    className="absolute pointer-events-none z-40 text-black font-black text-2xl"
+                    style={{
+                        left: p.x,
+                        top: p.y,
+                        opacity: p.life,
+                        transform: `scale(${p.life}) rotate(${p.vx * 10}deg)`,
+                        textShadow: '2px 2px 0px white' // Sticker outline effect
+                    }}
+                >
+                    {p.text}
+                </div>
+            ))}
+
+
+            {/* 5. Tap Zone */}
             <div
-                className="absolute inset-0 z-30 flex items-center justify-center"
+                className="absolute inset-0 z-50 flex items-center justify-center"
                 onPointerDown={handleTap}
             >
-                {/* Initial Countdown Overlay */}
+                {/* Countdown Overlay */}
                 {countdown !== null && (
-                    <div className="absolute inset-0 bg-black/80 flex items-center justify-center z-40 backdrop-blur-sm">
-                        <div className="text-9xl font-black text-yellow-400 animate-ping">
+                    <div className="absolute inset-0 bg-black/90 flex items-center justify-center z-50 backdrop-blur-md">
+                        <div className="text-[10rem] font-black text-[#DFFF00] animate-ping stroke-black stroke-2" style={{ WebkitTextStroke: '4px black' }}>
                             {countdown}
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* Timer Overlay (Top Center) */}
-            <div className="absolute top-8 left-1/2 -translate-x-1/2 z-40">
-                <div className="bg-black text-yellow-400 font-mono text-xl px-4 py-1 rounded border-2 border-white">
-                    {timer}s
-                </div>
+            {/* Top Timer */}
+            <div className="absolute top-safe px-4 py-2 bg-black/50 backdrop-blur rounded-full border border-white/20 z-50 mt-4 mx-auto left-0 right-0 w-32 flex justify-center">
+                <span className="font-mono text-xl font-bold text-white">{timer}</span>
             </div>
+
         </div>
     );
 };

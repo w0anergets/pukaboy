@@ -29,10 +29,25 @@ function App() {
           WebApp.enableClosingConfirmation();
         }
 
-        // Global Styles
+        // Global Styles & Input Locking
         document.body.style.overflow = 'hidden';
-        document.body.style.touchAction = 'none';
+        document.body.style.touchAction = 'none'; // CRITICAL: Prevent swipes globally
         document.body.style.backgroundColor = '#111827';
+        document.body.style.userSelect = 'none';
+        document.body.style.webkitUserSelect = 'none';
+
+        // Prevent multi-touch and zooming
+        const preventDefault = (e: Event) => e.preventDefault();
+        const preventMultiTouch = (e: TouchEvent) => {
+          if (e.touches.length > 1) {
+            e.preventDefault();
+            e.stopPropagation();
+          }
+        };
+
+        document.addEventListener('touchmove', preventDefault, { passive: false });
+        document.addEventListener('touchstart', preventMultiTouch, { passive: false });
+        document.addEventListener('gesturestart', preventDefault); // iOS Zoom
 
         // Auth Logic
         // @ts-ignore

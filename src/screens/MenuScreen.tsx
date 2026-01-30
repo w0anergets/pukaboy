@@ -7,7 +7,28 @@ interface MenuScreenProps {
     status: string;
 }
 
+import { soundService } from '../services/soundService';
+
 export const MenuScreen: React.FC<MenuScreenProps> = ({ user, onCreateGame, status }) => {
+
+    useEffect(() => {
+        // Try to init audio on mount (might be blocked until interact)
+        const onInteract = () => {
+            soundService.init();
+            soundService.playMenuMusic();
+            window.removeEventListener('click', onInteract);
+            window.removeEventListener('touchstart', onInteract);
+        };
+
+        window.addEventListener('click', onInteract);
+        window.addEventListener('touchstart', onInteract);
+
+        return () => {
+            window.removeEventListener('click', onInteract);
+            window.removeEventListener('touchstart', onInteract);
+        };
+    }, []);
+
     return (
         <div className="flex flex-col h-screen bg-black overflow-hidden relative font-sans">
             {/* Split Background */}
