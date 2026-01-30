@@ -41,11 +41,11 @@ function App() {
     if (tgUser) {
       setStatus("Authenticating...");
       userService.getOrCreateUser({
-        id: tgUser.id,
-        username: tgUser.username,
-        first_name: tgUser.first_name,
-        last_name: tgUser.last_name,
-        photo_url: tgUser.photo_url
+        id: tgUser!.id,
+        username: tgUser!.username,
+        first_name: tgUser!.first_name,
+        last_name: tgUser!.last_name,
+        photo_url: tgUser!.photo_url
       }).then(u => {
         if (u) {
           setUser(u);

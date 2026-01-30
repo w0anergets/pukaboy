@@ -4,6 +4,8 @@ import { gameService } from '../services/gameService';
 import type { GameSession } from '../services/gameService';
 import { supabase } from '../lib/supabase';
 import WebApp from '@twa-dev/sdk';
+import spritesBodies from '../assets/sprites/bodies.jpg';
+import spritesEngines from '../assets/sprites/engines.jpg';
 
 interface GameScreenProps {
     sessionId: string;
