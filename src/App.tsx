@@ -20,60 +20,94 @@ function App() {
   const [sessionData, setSessionData] = useState<GameSession | null>(null);
 
   useEffect(() => {
-    // Basic Init
-    WebApp.ready();
-    WebApp.expand();
-    WebApp.enableClosingConfirmation();
+    const init = async () => {
+      try {
+        // Basic Init
+        if (typeof window !== 'undefined' && (window as any).Telegram?.WebApp) {
+          WebApp.ready();
+          WebApp.expand();
+          WebApp.enableClosingConfirmation();
+        }
 
-    // Global Styles
-    document.body.style.overflow = 'hidden';
-    document.body.style.touchAction = 'none'; // CRITICAL: Prevent swipes globally
-    document.body.style.backgroundColor = '#111827'; // gray-900
+        // Global Styles
+        document.body.style.overflow = 'hidden';
+        document.body.style.touchAction = 'none';
+        document.body.style.backgroundColor = '#111827';
+
+        // Auth Logic
+        // @ts-ignore
+        const tgUser = WebApp.initDataUnsafe?.user;
+
+        if (tgUser) {
+          setStatus("Authenticating...");
+          try {
+            const user = await userService.getOrCreateUser({
+              id: tgUser.id,
+              username: tgUser.username,
+              first_name: tgUser.first_name,
+              last_name: tgUser.last_name,
+              photo_url: tgUser.photo_url
+            });
+
+            if (user) {
+              setUser(user);
+              setStatus("Ready");
+
+              // Deep Link Check
+              // @ts-ignore
+              const startParam = WebApp.initDataUnsafe.start_param;
+              if (startParam && startParam.startsWith('join_')) {
+                const sessId = startParam.replace('join_', '');
+                const success = await gameService.joinGame(sessId, user.id);
+                if (success) {
+                  setCurrentSessionId(sessId);
+                  setMode('LOBBY');
+                } else {
+                  alert("Could not join game (Full or Error)");
+                }
+              }
+            } else {
+              setStatus("Auth Failed");
+            }
+          } catch (e) {
+            console.error("Auth Error", e);
+            setStatus("Auth Connection Error");
+          }
+        } else {
+          // Fallback for debugging / non-telegram
+          // Delay slightly to not flash
+          setTimeout(() => {
+            if (import.meta.env.DEV) {
+              // Auto-login as debug user in dev
+              const debugUser = {
+                id: 999999,
+                username: 'DebugUser',
+                first_name: 'Debug',
+                last_name: 'Mode',
+                photo_url: null
+              };
+              userService.getOrCreateUser(debugUser).then(u => {
+                setUser(u);
+                setStatus("Ready (Debug)");
+              });
+            } else {
+              setStatus("Run in Telegram");
+            }
+          }, 500);
+        }
+
+      } catch (err) {
+        console.error("Init Error:", err);
+        setStatus(`Init Error: ${err}`);
+      }
+    };
+
+    init();
 
     return () => {
       document.body.style.overflow = '';
       document.body.style.touchAction = '';
     };
-
-    // Auth
-    // @ts-ignore
-    const tgUser = WebApp.initDataUnsafe.user;
-    if (tgUser) {
-      setStatus("Authenticating...");
-      userService.getOrCreateUser({
-        id: tgUser!.id,
-        username: tgUser!.username,
-        first_name: tgUser!.first_name,
-        last_name: tgUser!.last_name,
-        photo_url: tgUser!.photo_url
-      }).then(u => {
-        if (u) {
-          setUser(u);
-          setStatus("Ready");
-
-          // Deep Link Check
-          // @ts-ignore
-          const startParam = WebApp.initDataUnsafe.start_param;
-          if (startParam && startParam.startsWith('join_')) {
-            const sessId = startParam.replace('join_', '');
-            console.log("Deep link join:", sessId);
-            // Attempt join
-            gameService.joinGame(sessId, u.id).then(success => {
-              if (success) {
-                setCurrentSessionId(sessId);
-                setMode('LOBBY');
-              } else {
-                alert("Could not join game (Full or Error)");
-              }
-            });
-          }
-        } else {
-          setStatus("Auth Error");
-        }
-      });
-    } else {
-      setStatus("Run in Telegram");
-    }
   }, []);
 
   const handleCreateGame = async () => {
@@ -158,6 +192,27 @@ function App() {
           onRematch={handleRematch}
           onMenu={handleBackToMenu}
         />
+      )}
+
+      {/* Emergency Status Display */}
+      {status !== 'Ready' && status !== 'Ready (Debug)' && (
+        <div className="fixed bottom-0 w-full bg-red-900 text-white text-xs p-1 text-center font-mono z-50 opacity-80">
+          DEBUG: {status}
+          {status === 'Run in Telegram' && (
+            <button
+              className="ml-2 underline"
+              onClick={() => {
+                // Manual Debug Trigger
+                userService.getOrCreateUser({ id: 777, first_name: 'Manual', username: 'Debug' }).then(u => {
+                  setUser(u);
+                  setStatus("Ready");
+                });
+              }}
+            >
+              [Force Login]
+            </button>
+          )}
+        </div>
       )}
     </div>
   );
